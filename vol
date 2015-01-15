@@ -1,0 +1,229 @@
+#!/bin/bash
+## 
+## CONTRIBUTORS: 
+## 
+##     * Gabriel Gonzalez (gabeg@bu.edu) 
+## 
+## 
+## LICENSE: 
+## 
+##     The MIT License (MIT)
+## 
+## 
+## NAME:
+## 
+##     vol - Display and control the system volume.
+## 
+## 
+## SYNTAX: 
+## 
+##     vol [-h] [--display] [-m] [-i] [-d] [<value>]
+## 
+## 
+## PURPOSE:
+## 
+##     Display information on the system volume level.
+## 
+## 
+## OPTIONS:
+## 
+##     -h
+##         Print program usage.
+## 
+##     --display
+##         Display a GUI noification, using "noti", that shows the volume level.
+## 
+##     -m, --mute
+##         Toggle volume mute.
+## 
+##     -i, --inc
+##         Increment the volume by 5%.
+## 
+##     -d, --dec
+##         Decrement the volume by 5%.
+## 
+## 
+## FUNCTIONS:
+## 
+##     print_usage  - Print program usage.
+## 
+##     print_volume - Print current volume level.
+## 
+##     gui_display  - Display volume information using the GUI.
+## 
+##     set_volume   - Set system volume.
+## 
+## 
+## FILE STRUCTURE:
+## 
+##     * Print Program Usage
+##     * Print Volume
+##     * GUI Volume Notification
+##     * Modify Volume Level
+##     * Control System Volume 
+## 
+## 
+## MODIFICATION HISTORY:
+## 	
+##     gabeg Jan 04 2015 <> Created.
+## 
+##     gabeg Jan 07 2015 <> Added the GUI notification display.
+## 
+## **********************************************************************************
+
+
+
+## ================
+## GLOBAL VARIABLES
+## ================
+
+## Program information
+ARGV=("$@")
+PROG_NAME=`basename $0`
+
+## Gui notification bubble
+NOTIFY="noti"
+NOTIFY_PATH=`hash "${NOTIFY}" 2>&1`
+
+
+
+## ###############################
+## ##### PRINT PROGRAM USAGE #####
+## ###############################
+
+## Print program usage
+function print_usage {
+    echo "Usage: vol [-h] [--display] [-m] [-i] [-d] [<value>]"
+    exit 1
+}
+
+
+
+## ########################
+## ##### PRINT VOLUME #####
+## ########################
+
+## Print volume
+function print_volume {
+    
+    ## Playback channels
+    local IFS=$'-'
+    local playback=(`amixer get Master \
+                        | grep --color=never "Playback channels" \
+                        | sed 's/^.*.: //'`)
+    
+    ## Channels
+    for i in "${playback[@]}"; do 
+        local name=`echo "${i}" \
+                        | sed 's/^ //; s/ $//'`
+        local channel=`amixer get Master \
+                           | grep "${name}:"`
+        local vol=`echo "${channel}" \
+                       | cut -f2 -d'[' \
+                       | cut -f1 -d'%'`
+        local status=`echo "${channel}" \
+                          | grep -m 1 -o "\[off\]\|\[on\]" \
+                          | tr '[' '\0' \
+                          | tr ']' '\0'`
+        echo "Volume: ${vol}% - ${name} [${status}]"
+    done
+}
+
+
+
+## ###################################
+## ##### GUI VOLUME NOTIFICATION #####
+## ###################################
+
+## GUI notification for battery information
+function gui_display {
+    
+    ## Check if notification program exists
+    if [ ! -z ${NOTIFY_PATH} ]; then 
+        echo "${PROG_NAME}: '${NOTIFY}' does not exist."
+        exit 1
+    fi
+    
+    ## Display current battery level
+    ${NOTIFY} --time 5 -b "$(print_volume)" 
+}
+
+
+
+## ###############################
+## ##### MODIFY VOLUME LEVEL #####
+## ###############################
+
+## Change system volume
+function set_volume {    
+    
+    ## Verify integer value was inputted
+    if [ "${ARGV[0]}" -eq "${ARGV[0]}" ] 2>/dev/null; then
+        :
+    else
+        print_usage
+    fi
+    
+    ## Check if input value is outside of limit range
+    local input=${ARGV[0]}
+    if [ ${input} -lt 0 ]; then
+        input=0
+    elif [ ${input} -gt 100 ]; then
+        input=100
+    fi
+    
+    ## Set the current volume level
+    amixer -q cset iface=MIXER,name="Master Playback Volume" "${input}%"
+    
+    ## Display current volume
+    print_volume
+}
+
+
+
+## #################################
+## ##### CONTROL SYSTEM VOLUME ##### 
+## #################################
+
+## Control system volume
+function main {
+    
+    case "${ARGV[0]}" in
+        
+        ## Print program usage
+        "-h")
+            print_usage
+            ;;
+        
+        ## Print current volume level
+        "")
+            print_volume
+            ;;
+        
+        "--display")
+            gui_display
+            ;;
+        
+        ## Toggle mute 
+        "-m"|"--mute")
+            amixer sset Master toggle
+            ;;
+        
+        "-i"|"--inc")
+            amixer -q set Master 5%+
+            ;;
+        
+        "-d"|"--dec")
+            amixer -q set Master 5%-
+            ;;
+        
+        ## Set the volume level
+        *)
+            set_volume
+    esac
+}
+
+
+
+## Execute volume control
+main
