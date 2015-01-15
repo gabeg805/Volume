@@ -42,9 +42,9 @@ If you have any problems, feel free to email me at 'gabeg@bu.edu'.
 Potential Problems
 ==================
 
-- If the "--display" option does not work, it may be because the program does not 
-  exist on your computer. To utilize this option, follow the install instructions for
-  my "Noti" repository.
+- If the "--display" option does not work, it may be because the notification program 
+  does not exist on your computer. To utilize this option, follow the install 
+  instructions for my "Noti" repository.
 
 
 
