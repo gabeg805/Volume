@@ -24,7 +24,7 @@ Requires:
 
 Update your PATH environment variable in your shell rc file with:
     
-    $ export PATH="${PATH}":"/PATH/TO/PROGRAM/vol
+    $ export PATH="${PATH}":"/PATH/TO/PROGRAM/vol"
 
 Now the program is ready for use!
 
