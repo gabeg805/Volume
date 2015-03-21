@@ -17,7 +17,8 @@
 ## 
 ## SYNTAX: 
 ## 
-##     vol [-h] [--display] [-m] [-i] [-d] [<value>]
+##     vol [-h] [-i|--inc] [-d|--dec] [-m|--mute] [--on] [--off] [-r|--reset] 
+##         [--display] [<value>]
 ## 
 ## 
 ## PURPOSE:
@@ -30,28 +31,43 @@
 ##     -h
 ##         Print program usage.
 ## 
-##     --display
-##         Display a GUI noification, using "noti", that shows the volume level.
-## 
-##     -m, --mute
-##         Toggle volume mute.
-## 
 ##     -i, --inc
 ##         Increment the volume by 5%.
 ## 
 ##     -d, --dec
 ##         Decrement the volume by 5%.
 ## 
+##     -m, --mute
+##         Toggle volume mute.
+## 
+##     --on
+##         Turn the volume on all channels on.
+## 
+##     --off
+##         Turn the volume on all channels off.
+## 
+##     -r, --reset
+##         Reset the system volume by turning all channels on, setting Master to 
+##         50%, and Headphone and Speaker to 100%.
+## 
+##     --display
+##         Display a GUI noification, using "noti", that shows the volume level.
+## 
 ## 
 ## FUNCTIONS:
 ## 
-##     print_usage  - Print program usage.
+##     print_usage       - Print program usage.
 ## 
-##     print_volume - Print current volume level.
+##     print_separator   - Print separator corresponding to number of chars in given 
+##                         string.
+##     print_volume      - Print current volume level.
+##     print_volume_all  - Print volume for all channels.
 ## 
-##     gui_display  - Display volume information using the GUI.
+##     gui_display       - Display volume information using the GUI.
 ## 
-##     set_volume   - Set system volume.
+##     toggle_mute       - Toggle mute for the specified channel.
+##     set_volume        - Set system volume.
+##     set_volume_status - Turn the volume of all channels on/off.
 ## 
 ## 
 ## FILE STRUCTURE:
@@ -81,6 +97,9 @@
 ARGV=("$@")
 PROG_NAME=`basename $0`
 
+## Increase/decrease in volume
+DELTA=5
+
 ## Gui notification bubble
 NOTIFY="noti"
 NOTIFY_PATH=`hash "${NOTIFY}" 2>&1`
@@ -93,7 +112,8 @@ NOTIFY_PATH=`hash "${NOTIFY}" 2>&1`
 
 ## Print program usage
 function print_usage {
-    echo "Usage: ${PROG_NAME} [-h] [--display] [-m] [-i] [-d] [<value>]"
+    echo -e "Usage: ${PROG_NAME} [-h] [-i|--inc] [-d|--dec] [-m|--mute] [--on] [--off]" \
+         "\n\t[-r|--reset] [--display] [<value>]"
     exit 1
 }
 
@@ -103,20 +123,38 @@ function print_usage {
 ## ##### PRINT VOLUME #####
 ## ########################
 
+## Print separator
+function print_separator {
+    len=`echo "$1" | wc -c`
+    
+    while [ ${len} -gt 1 ]; do 
+        echo -n "="
+        len=$[ ${len} - 1 ]
+    done
+    
+    echo
+}
+
+
+
 ## Print volume
 function print_volume {
     
     ## Playback channels
     local IFS=$'-'
-    local playback=(`amixer get Master \
+    local playback=(`amixer get "$1" \
                         | grep --color=never "Playback channels" \
                         | sed 's/^.*.: //'`)
     
     ## Channels
+    print_separator "$1"
+    echo "$1"
+    print_separator "$1"
+    
     for i in "${playback[@]}"; do 
         local name=`echo "${i}" \
                         | sed 's/^ //; s/ $//'`
-        local channel=`amixer get Master \
+        local channel=`amixer get "$1" \
                            | grep "${name}:"`
         local vol=`echo "${channel}" \
                        | cut -f2 -d'[' \
@@ -127,6 +165,17 @@ function print_volume {
                           | tr ']' '\0'`
         echo "Volume: ${vol}% - ${name} [${status}]"
     done
+}
+
+
+
+## Print all channels
+function print_volume_all {
+    print_volume "Master"
+    echo
+    print_volume "Headphone"
+    echo
+    print_volume "Speaker"
 }
 
 
@@ -145,7 +194,7 @@ function gui_display {
     fi
     
     ## Display current battery level
-    ${NOTIFY} --time 5 -b "$(print_volume)" 
+    ${NOTIFY} --time 5 -b "$(print_volume Master)" 
 }
 
 
@@ -153,6 +202,31 @@ function gui_display {
 ## ###############################
 ## ##### MODIFY VOLUME LEVEL #####
 ## ###############################
+
+## Toggle mute
+function toggle_mute {
+    
+    ## Channel to toggle
+    channel=""
+    
+    case "${ARGV[1]}" in
+        ""|"Master")
+            channel="Master"
+            ;;
+        "Headphone")
+            channel="Headphone"
+            ;;
+        "Speaker")
+            channel="Speaker"
+            ;;
+    esac
+    
+    ## Toggle mute
+    amixer -q set "${channel}" toggle
+    print_volume "${channel}"
+}
+
+
 
 ## Change system volume
 function set_volume {    
@@ -176,7 +250,16 @@ function set_volume {
     amixer -q cset iface=MIXER,name="Master Playback Volume" "${input}%"
     
     ## Display current volume
-    print_volume
+    print_volume "Master"
+}
+
+
+
+## Turn volume on/off
+function set_volume_status {
+    amixer -q set Master "$1"
+    amixer -q set Headphone "$1"
+    amixer -q set Speaker "$1"
 }
 
 
@@ -197,40 +280,48 @@ function main {
         
         ## Print current volume level
         "")
-            print_volume
+            print_volume_all
             ;;
         
-        "--display")
-            gui_display
+        "-i"|"--inc")
+            amixer -q set Master ${DELTA}%+
+            print_volume "Master"
+            ;;
+        
+        "-d"|"--dec")
+            amixer -q set Master ${DELTA}%-
+            print_volume "Master"
             ;;
         
         ## Toggle mute 
         "-m"|"--mute")
-            amixer sset Master toggle
-            amixer sset Headphone toggle
-            ;;
-        
-        "-i"|"--inc")
-            amixer -q set Master 5%+
-            amixer -q set Headphone 5%+
-            ;;
-        
-        "-d"|"--dec")
-            amixer -q set Master 5%-
-            amixer -q set Headphone 5%-
+            toggle_mute 
             ;;
         
         ## Turn on/off volume
         "--on")
-            amixer -q sset Master on
-            amixer -q sset Headphone on
-            amixer -q sset Speaker on
+            set_volume_status "on"
+            print_volume_all
             ;;
         
         "--off")
-            amixer -q sset Master off
-            amixer -q sset Headphone off
-            amixer -q sset Speaker off
+            set_volume_status "off"
+            print_volume_all
+            ;;
+        
+        ## Reset volume of everything to 50%
+        "-r"|"--reset")
+            set_volume_status "on"
+            
+            amixer -q set Master 50%
+            amixer -q set Headphone 100%
+            amixer -q set Speaker 100%
+            
+            print_volume_all
+            ;;
+        
+        "--display")
+            gui_display
             ;;
         
         ## Set the volume level
