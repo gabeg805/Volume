@@ -207,14 +207,30 @@ function main {
         ## Toggle mute 
         "-m"|"--mute")
             amixer sset Master toggle
+            amixer sset Headphone toggle
             ;;
         
         "-i"|"--inc")
             amixer -q set Master 5%+
+            amixer -q set Headphone 5%+
             ;;
         
         "-d"|"--dec")
             amixer -q set Master 5%-
+            amixer -q set Headphone 5%-
+            ;;
+        
+        ## Turn on/off volume
+        "--on")
+            amixer -q sset Master on
+            amixer -q sset Headphone on
+            amixer -q sset Speaker on
+            ;;
+        
+        "--off")
+            amixer -q sset Master off
+            amixer -q sset Headphone off
+            amixer -q sset Speaker off
             ;;
         
         ## Set the volume level
