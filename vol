@@ -56,23 +56,27 @@
 ## 
 ## FUNCTIONS:
 ## 
-##     print_usage       - Print program usage.
+##     print_usage         - Print program usage.
 ## 
-##     print_separator   - Print separator corresponding to number of chars in given 
-##                         string.
-##     print_volume      - Print current volume level.
-##     print_volume_all  - Print volume for all channels.
+##     is_channel          - Check if channel exists.
 ## 
-##     gui_display       - Display volume information using the GUI.
+##     print_separator     - Print separator corresponding to number of chars in given 
+##                           string.
+##     print_volume        - Print current volume level.
+##     print_volume_all    - Print volume for all channels.
 ## 
-##     toggle_mute       - Toggle mute for the specified channel.
-##     set_volume        - Set system volume.
-##     set_volume_status - Turn the volume of all channels on/off.
+##     gui_display         - Display volume information using the GUI.
+## 
+##     toggle_mute         - Toggle mute for the specified channel.
+##     set_volume          - Set system volume.
+##     set_volume_status   - Turn the volume of all channels on/off.
+##     set_volume_defaults - Set the default volume values.
 ## 
 ## 
 ## FILE STRUCTURE:
 ## 
 ##     * Print Program Usage
+##     * Check Channel Existence
 ##     * Print Volume
 ##     * GUI Volume Notification
 ##     * Modify Volume Level
@@ -84,6 +88,11 @@
 ##     gabeg Jan 04 2015 <> Created.
 ## 
 ##     gabeg Jan 07 2015 <> Added the GUI notification display.
+## 
+##     gabeg Mar 22 2015 <> Added more functionality in case the amixer settings get 
+##                          messed up. This includes specifying a channel to modify, 
+##                          setting all channels on/off, and toggling mute on a 
+##                          channel.
 ## 
 ## **********************************************************************************
 
@@ -97,8 +106,9 @@
 ARGV=("$@")
 PROG_NAME=`basename $0`
 
-## Increase/decrease in volume
+## Volume variables
 DELTA=5
+CHANNELS=("Master" "Headphone" "Speaker")
 
 ## Gui notification bubble
 NOTIFY="noti"
@@ -115,6 +125,23 @@ function print_usage {
     echo -e "Usage: ${PROG_NAME} [-h] [-i|--inc] [-d|--dec] [-m|--mute] [--on] [--off]" \
          "\n\t[-r|--reset] [--display] [<value>]"
     exit 1
+}
+
+
+
+## ###################################
+## ##### CHECK CHANNEL EXISTENCE #####
+## ###################################
+
+## Check if a channel exists
+function is_channel {
+    exist=`amixer | grep "$1"`
+    
+    if [ -z "${exist}" ] || [ -z "$1" ]; then
+        echo false
+    else
+        echo true
+    fi
 }
 
 
@@ -140,6 +167,19 @@ function print_separator {
 ## Print volume
 function print_volume {
     
+    ## Check if input is a channel
+    if `is_channel "$1"`; then 
+        :
+    else
+        return
+    fi
+    
+    ## Print header
+    if [[ "$1" != "${CHANNELS[0]}" ]]; then echo; fi
+    print_separator "$1"
+    echo "$1"
+    print_separator "$1"
+    
     ## Playback channels
     local IFS=$'-'
     local playback=(`amixer get "$1" \
@@ -147,10 +187,6 @@ function print_volume {
                         | sed 's/^.*.: //'`)
     
     ## Channels
-    print_separator "$1"
-    echo "$1"
-    print_separator "$1"
-    
     for i in "${playback[@]}"; do 
         local name=`echo "${i}" \
                         | sed 's/^ //; s/ $//'`
@@ -163,6 +199,7 @@ function print_volume {
                           | grep -m 1 -o "\[off\]\|\[on\]" \
                           | tr '[' '\0' \
                           | tr ']' '\0'`
+        
         echo "Volume: ${vol}% - ${name} [${status}]"
     done
 }
@@ -171,11 +208,9 @@ function print_volume {
 
 ## Print all channels
 function print_volume_all {
-    print_volume "Master"
-    echo
-    print_volume "Headphone"
-    echo
-    print_volume "Speaker"
+    for chan in "${CHANNELS[@]}"; do
+        print_volume "${chan}"
+    done
 }
 
 
@@ -210,19 +245,29 @@ function toggle_mute {
     channel=""
     
     case "${ARGV[1]}" in
-        ""|"Master")
-            channel="Master"
+        "")
+            channel="${CHANNELS[0]}"
             ;;
-        "Headphone")
-            channel="Headphone"
-            ;;
-        "Speaker")
-            channel="Speaker"
+        
+        *)
+            for chan in "${CHANNELS[@]}"; do
+                if [[ "${ARGV[1]}" == "${chan}" ]]; then
+                    channel="${chan}"
+                    break
+                fi
+            done
             ;;
     esac
     
+    ## Check if channel exists
+    if `is_channel "${channel}"`; then
+        :
+    else
+        return
+    fi
+    
     ## Toggle mute
-    amixer -q set "${channel}" toggle
+    amixer -q set "${channel}" toggle 
     print_volume "${channel}"
 }
 
@@ -250,16 +295,33 @@ function set_volume {
     amixer -q cset iface=MIXER,name="Master Playback Volume" "${input}%"
     
     ## Display current volume
-    print_volume "Master"
+    print_volume "${CHANNELS[0]}"
 }
 
 
 
 ## Turn volume on/off
 function set_volume_status {
-    amixer -q set Master "$1"
-    amixer -q set Headphone "$1"
-    amixer -q set Speaker "$1"
+    for chan in "${CHANNELS[@]}"; do
+        if `is_channel "${chan}"`; then
+            amixer -q set "${chan}" "$1" 
+        fi
+    done
+}
+
+
+
+## Set default values
+function set_volume_defaults {
+    for chan in "${CHANNELS[@]}"; do
+        if `is_channel "${chan}"`; then
+            if [[ "${chan}" == "${CHANNELS[0]}" ]]; then
+                amixer -q set "${chan}" 50% 
+            else
+                amixer -q set "${chan}" 100% 
+            fi
+        fi
+    done
 }
 
 
@@ -284,13 +346,13 @@ function main {
             ;;
         
         "-i"|"--inc")
-            amixer -q set Master ${DELTA}%+
-            print_volume "Master"
+            amixer -q set "${CHANNELS[0]}" ${DELTA}%+
+            print_volume "${CHANNELS[0]}"
             ;;
         
         "-d"|"--dec")
-            amixer -q set Master ${DELTA}%-
-            print_volume "Master"
+            amixer -q set "${CHANNELS[0]}" ${DELTA}%-
+            print_volume "${CHANNELS[0]}"
             ;;
         
         ## Toggle mute 
@@ -305,18 +367,14 @@ function main {
             ;;
         
         "--off")
-            set_volume_status "off"
+            set_volume_status "off" 
             print_volume_all
             ;;
         
         ## Reset volume of everything to 50%
         "-r"|"--reset")
-            set_volume_status "on"
-            
-            amixer -q set Master 50%
-            amixer -q set Headphone 100%
-            amixer -q set Speaker 100%
-            
+            set_volume_status "on" 
+            set_volume_defaults 
             print_volume_all
             ;;
         
