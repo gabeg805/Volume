@@ -17,8 +17,8 @@
 ## 
 ## SYNTAX: 
 ## 
-##     vol [-h] [-i|--inc] [-d|--dec] [-m|--mute] [--on] [--off] [-r|--reset] 
-##         [--display] [<value>]
+##     vol [-h|--help] [--display] [-i|--inc] [-d|--dec] [[-m|--mute] <channel>]
+##         [--on] [--off] [-r|--reset] [<value>]
 ## 
 ## 
 ## PURPOSE:
@@ -28,8 +28,11 @@
 ## 
 ## OPTIONS:
 ## 
-##     -h
+##     -h, --help
 ##         Print program usage.
+## 
+##     --display
+##         Display a GUI noification, using "noti", that shows the volume level.
 ## 
 ##     -i, --inc
 ##         Increment the volume by 5%.
@@ -37,40 +40,44 @@
 ##     -d, --dec
 ##         Decrement the volume by 5%.
 ## 
-##     -m, --mute
-##         Toggle volume mute.
+##     -m, --mute <channel>
+##         Toggle mute for the Master volume channel, or to the specified channel.
 ## 
-##     --on
-##         Turn the volume on all channels on.
+##     --on <channel>
+##         Turn the volume on for all channels, or only the specified channel.
 ## 
-##     --off
-##         Turn the volume on all channels off.
+##     --off <channel>
+##         Turn the volume off for all channels, or only the specified channel.
 ## 
 ##     -r, --reset
 ##         Reset the system volume by turning all channels on, setting Master to 
 ##         50%, and Headphone and Speaker to 100%.
 ## 
-##     --display
-##         Display a GUI noification, using "noti", that shows the volume level.
+##     <value>
+##         Set the volume level to this value (0% - 100%)
 ## 
 ## 
 ## FUNCTIONS:
 ## 
-##     print_usage         - Print program usage.
+##     print_usage          - Print program usage.
 ## 
-##     is_channel          - Check if channel exists.
+##     check_command        - Check if program exists on system (in the PATH 
+##                            environment variable).
+##     is_channel           - Check if channel exists.
 ## 
-##     print_separator     - Print separator corresponding to number of chars in given 
-##                           string.
-##     print_volume        - Print current volume level.
-##     print_volume_all    - Print volume for all channels.
+##     print_separator      - Print separator corresponding to number of chars in given 
+##                            string.
+##     print_volume         - Print current volume level.
+##     print_volume_channel - Print volume for all channels.
 ## 
-##     gui_display         - Display volume information using the GUI.
+##     str_to_cap           - Convert the string to the format where first letter is
+##                            capitalized and the rest of the string is lowercase.
+##     gui_display          - Display volume information using the GUI.
 ## 
-##     toggle_mute         - Toggle mute for the specified channel.
-##     set_volume          - Set system volume.
-##     set_volume_status   - Turn the volume of all channels on/off.
-##     set_volume_defaults - Set the default volume values.
+##     toggle_mute          - Toggle mute for the specified channel.
+##     set_volume           - Set system volume.
+##     set_volume_status    - Turn the volume of all channels on/off.
+##     set_volume_defaults  - Set the default volume values.
 ## 
 ## 
 ## FILE STRUCTURE:
@@ -78,6 +85,7 @@
 ##     * Print Program Usage
 ##     * Check Channel Existence
 ##     * Print Volume
+##     * Convert String Caps
 ##     * GUI Volume Notification
 ##     * Modify Volume Level
 ##     * Control System Volume 
@@ -93,6 +101,9 @@
 ##                          messed up. This includes specifying a channel to modify, 
 ##                          setting all channels on/off, and toggling mute on a 
 ##                          channel.
+## 
+##     gabeg Mar 29 2015 <> Can now set a specific channel on/off, and the input 
+##                          channel that the user enters is not case sensitive.
 ## 
 ## **********************************************************************************
 
@@ -112,7 +123,6 @@ CHANNELS=("Master" "Headphone" "Speaker")
 
 ## Gui notification bubble
 NOTIFY="noti"
-NOTIFY_PATH=`hash "${NOTIFY}" 2>&1`
 
 
 
@@ -122,8 +132,8 @@ NOTIFY_PATH=`hash "${NOTIFY}" 2>&1`
 
 ## Print program usage
 function print_usage {
-    echo -e "Usage: ${PROG_NAME} [-h] [-i|--inc] [-d|--dec] [-m|--mute] [--on] [--off]" \
-         "\n\t[-r|--reset] [--display] [<value>]"
+    echo "Usage: ${PROG_NAME} [-h|--help] [--display] [-i|--inc] [-d|--dec]"
+    echo -e "\t[[-m|--mute] <channel>] [--on] [--off] [-r|--reset] [<value>]"
     exit 1
 }
 
@@ -132,6 +142,18 @@ function print_usage {
 ## ###################################
 ## ##### CHECK CHANNEL EXISTENCE #####
 ## ###################################
+
+## Check if command exists on system
+function check_command {
+    exist=`hash "$1" 2>&1`
+    
+    if [ ! -z "${exist}" ]; then
+        echo "${PROG_NAME}: Program '$1' does not exist. Please install it and try again."
+        exit 1
+    fi
+}
+
+
 
 ## Check if a channel exists
 function is_channel {
@@ -168,14 +190,12 @@ function print_separator {
 function print_volume {
     
     ## Check if input is a channel
-    if `is_channel "$1"`; then 
-        :
-    else
+    if [ `is_channel "$1"` == false ]; then 
         return
     fi
     
     ## Print header
-    if [[ "$1" != "${CHANNELS[0]}" ]]; then echo; fi
+    if [[ "$1" != "${CHANNELS[0]}" && "$2" == "all" ]]; then echo; fi
     print_separator "$1"
     echo "$1"
     print_separator "$1"
@@ -206,11 +226,35 @@ function print_volume {
 
 
 
-## Print all channels
-function print_volume_all {
+## Print all volume channels, or the specified volume channel
+function print_volume_channel {
+    
+    ## Channel was specified
+    input=`str_to_cap "${ARGV[1]}"`
+    
+    if [ ! -z "${input}" ]; then
+        print_volume "${input}"
+        return 0
+    fi 
+    
+    ## Print all channels
     for chan in "${CHANNELS[@]}"; do
-        print_volume "${chan}"
+        print_volume "${chan}" "all"
     done
+}
+
+
+
+## ###############################
+## ##### CONVERT STRING CAPS #####
+## ###############################
+
+## Convert string to capitalize first letter and lowercase all other letters
+function str_to_cap {
+    start_letter=`echo "${1:0:1}" | tr '[a-z]' '[A-Z]'`
+    rest_letters=`echo "${1:1}" | tr '[A-Z]' '[a-z]'`
+    
+    echo "${start_letter}${rest_letters}"
 }
 
 
@@ -223,10 +267,7 @@ function print_volume_all {
 function gui_display {
     
     ## Check if notification program exists
-    if [ ! -z ${NOTIFY_PATH} ]; then 
-        echo "${PROG_NAME}: '${NOTIFY}' does not exist."
-        exit 1
-    fi
+    check_command "${NOTIFY}"
     
     ## Display current battery level
     ${NOTIFY} --time 5 -b "$(print_volume Master)" 
@@ -238,20 +279,26 @@ function gui_display {
 ## ##### MODIFY VOLUME LEVEL #####
 ## ###############################
 
-## Toggle mute
+## Toggle mute for master channel or the specified channel
 function toggle_mute {
     
     ## Channel to toggle
     channel=""
     
+    ## Check what to toggle
     case "${ARGV[1]}" in
+        
+        ## Toggle mute for master
         "")
             channel="${CHANNELS[0]}"
             ;;
         
+        ## Toggle mute for a specific channel
         *)
+            input=`str_to_cap "${ARGV[1]}"`
+            
             for chan in "${CHANNELS[@]}"; do
-                if [[ "${ARGV[1]}" == "${chan}" ]]; then
+                if [[ "${input}" == "${chan}" ]]; then
                     channel="${chan}"
                     break
                 fi
@@ -260,9 +307,7 @@ function toggle_mute {
     esac
     
     ## Check if channel exists
-    if `is_channel "${channel}"`; then
-        :
-    else
+    if [ `is_channel "${channel}"` == false ]; then
         return
     fi
     
@@ -280,11 +325,13 @@ function set_volume {
     if [ "${ARGV[0]}" -eq "${ARGV[0]}" ] 2>/dev/null; then
         :
     else
+        echo "${PROG_NAME}: Incorrect value entered."
         print_usage
     fi
     
     ## Check if input value is outside of limit range
-    local input=${ARGV[0]}
+    input=${ARGV[0]}
+    
     if [ ${input} -lt 0 ]; then
         input=0
     elif [ ${input} -gt 100 ]; then
@@ -300,8 +347,18 @@ function set_volume {
 
 
 
-## Turn volume on/off
+## Turn volume on/off for all channels, or specified channel
 function set_volume_status {
+    
+    ## Channel was specified
+    input=`str_to_cap "${ARGV[1]}"`
+    
+    if [ ! -z "${input}" ] && `is_channel "${input}"`; then
+        amixer -q set "${input}" "$1" 
+        return 0
+    fi 
+    
+    ## Turn on/off volume for all channels
     for chan in "${CHANNELS[@]}"; do
         if `is_channel "${chan}"`; then
             amixer -q set "${chan}" "$1" 
@@ -333,18 +390,27 @@ function set_volume_defaults {
 ## Control system volume
 function main {
     
+    ## Check if volume command is present on system
+    check_command "amixera"
+    
+    ## Parse command line arguments
     case "${ARGV[0]}" in
         
         ## Print program usage
-        "-h")
+        "-h"|"--help")
             print_usage
             ;;
         
         ## Print current volume level
         "")
-            print_volume_all
+            print_volume_channel
             ;;
         
+        "--display")
+            gui_display
+            ;;
+        
+        ## Increment/decrement the volume
         "-i"|"--inc")
             amixer -q set "${CHANNELS[0]}" ${DELTA}%+
             print_volume "${CHANNELS[0]}"
@@ -362,24 +428,20 @@ function main {
         
         ## Turn on/off volume
         "--on")
-            set_volume_status "on"
-            print_volume_all
+            set_volume_status "on" 
+            print_volume_channel 
             ;;
         
         "--off")
             set_volume_status "off" 
-            print_volume_all
+            print_volume_channel
             ;;
         
         ## Reset volume of everything to 50%
         "-r"|"--reset")
             set_volume_status "on" 
             set_volume_defaults 
-            print_volume_all
-            ;;
-        
-        "--display")
-            gui_display
+            print_volume_channel
             ;;
         
         ## Set the volume level
