@@ -17,8 +17,8 @@
 ## 
 ## SYNTAX: 
 ## 
-##     vol [-h|--help] [--display] [-i|--inc] [-d|--dec] [[-m|--mute] <channel>]
-##         [--on] [--off] [-r|--reset] [<value>]
+##     vol [-h|--help] [--display] [[-p|--print] <item>] [-i|--inc] [-d|--dec] 
+##         [[-m|--mute] <channel>] [--on] [--off] [-r|--reset] [<value>]
 ## 
 ## 
 ## PURPOSE:
@@ -33,6 +33,10 @@
 ## 
 ##     --display
 ##         Display a GUI noification, using "noti", that shows the volume level.
+## 
+##     -p, --print <item>
+##         Print either the volume level or the mute status, where <item> can take 
+##         the values [-v|--volume] or [-m|--mute].
 ## 
 ##     -i, --inc
 ##         Increment the volume by 5%.
@@ -69,6 +73,7 @@
 ##                            string.
 ##     print_volume         - Print current volume level.
 ##     print_volume_channel - Print volume for all channels.
+##     print_item           - Print either the volume level or the mute status.
 ## 
 ##     str_to_cap           - Convert the string to the format where first letter is
 ##                            capitalized and the rest of the string is lowercase.
@@ -105,6 +110,9 @@
 ##     gabeg Mar 29 2015 <> Can now set a specific channel on/off, and the input 
 ##                          channel that the user enters is not case sensitive.
 ## 
+##     gabeg Apr 13 2015 <> Added an option to print either the volume level or the
+##                          mute status.
+## 
 ## **********************************************************************************
 
 
@@ -132,8 +140,9 @@ NOTIFY="noti"
 
 ## Print program usage
 function print_usage {
-    echo "Usage: ${PROG_NAME} [-h|--help] [--display] [-i|--inc] [-d|--dec]"
-    echo -e "\t[[-m|--mute] <channel>] [--on] [--off] [-r|--reset] [<value>]"
+    echo "Usage: ${PROG_NAME} [-h|--help] [--display] [[-p|--print] <item>]"
+    echo -e "\t[-i|--inc] [-d|--dec] [[-m|--mute] <channel>] [--on] [--off]"
+    echo -e "\t[-r|--reset] [<value>]"
     exit 1
 }
 
@@ -241,6 +250,36 @@ function print_volume_channel {
     for chan in "${CHANNELS[@]}"; do
         print_volume "${chan}" "all"
     done
+}
+
+
+
+## Print the volume level or mute status
+function print_item {
+    
+    ## Test input
+    case "${ARGV[1]}" in
+        "-v"|"--volume")
+            opt=1
+            ;;
+        "-m"|"--mute")
+            opt=2
+            ;;
+        *)
+            print_usage
+            ;;
+    esac
+    
+    ## All items that can be printed
+    unset ARGV[1]
+    all_items=`print_volume_channel | sed 1,3d | head -1`
+    
+    ## Return desired item
+    if [ ${opt} -eq 1 ]; then
+        echo "${all_items}" | awk '{ print $2 }' | cut -f1 -d'%'
+    else
+        echo "${all_items}" | cut -f2 -d'[' | cut -f1 -d']'
+    fi
 }
 
 
@@ -391,7 +430,7 @@ function set_volume_defaults {
 function main {
     
     ## Check if volume command is present on system
-    check_command "amixera"
+    check_command "amixer"
     
     ## Parse command line arguments
     case "${ARGV[0]}" in
@@ -408,6 +447,11 @@ function main {
         
         "--display")
             gui_display
+            ;;
+        
+        ## Print item
+        "-p"|"--print")
+            print_item
             ;;
         
         ## Increment/decrement the volume
