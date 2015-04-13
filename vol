@@ -272,13 +272,13 @@ function print_item {
     
     ## All items that can be printed
     unset ARGV[1]
-    all_items=`print_volume_channel | sed 1,3d | head -1`
+    all_items=`amixer get "${CHANNELS[0]}" | tail -1`
     
     ## Return desired item
     if [ ${opt} -eq 1 ]; then
-        echo "${all_items}" | awk '{ print $2 }' | cut -f1 -d'%'
+        echo "${all_items}" | cut -f2 -d'[' | cut -f1 -d'%'
     else
-        echo "${all_items}" | cut -f2 -d'[' | cut -f1 -d']'
+        echo "${all_items}" | cut -f3 -d'[' | cut -f1 -d']'
     fi
 }
 
