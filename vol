@@ -1,173 +1,221 @@
 #!/bin/bash
-## 
-## CONTRIBUTORS: 
-## 
-##     * Gabriel Gonzalez (gabeg@bu.edu) 
-## 
-## 
-## LICENSE: 
-## 
-##     The MIT License (MIT)
-## 
-## 
-## NAME:
-## 
-##     vol - Display and control the system volume.
-## 
-## 
-## SYNTAX: 
-## 
-##     vol [-h|--help] [--display] [[-p|--print] <item>] [-i|--inc] [-d|--dec] 
-##         [[-m|--mute] <channel>] [--on] [--off] [-r|--reset] [<value>]
-## 
-## 
-## PURPOSE:
-## 
-##     Display information on the system volume level.
-## 
-## 
-## OPTIONS:
-## 
-##     -h, --help
-##         Print program usage.
-## 
-##     --display
-##         Display a GUI noification, using "noti", that shows the volume level.
-## 
-##     -p, --print <item>
-##         Print either the volume level or the mute status, where <item> can take 
-##         the values [-v|--volume] or [-m|--mute].
-## 
-##     -i, --inc
-##         Increment the volume by 5%.
-## 
-##     -d, --dec
-##         Decrement the volume by 5%.
-## 
-##     -m, --mute <channel>
-##         Toggle mute for the Master volume channel, or to the specified channel.
-## 
-##     --on <channel>
-##         Turn the volume on for all channels, or only the specified channel.
-## 
-##     --off <channel>
-##         Turn the volume off for all channels, or only the specified channel.
-## 
-##     -r, --reset
-##         Reset the system volume by turning all channels on, setting Master to 
-##         50%, and Headphone and Speaker to 100%.
-## 
-##     <value>
-##         Set the volume level to this value (0% - 100%)
-## 
-## 
-## FUNCTIONS:
-## 
-##     print_usage          - Print program usage.
-## 
-##     check_command        - Check if program exists on system (in the PATH 
-##                            environment variable).
-##     is_channel           - Check if channel exists.
-## 
-##     print_separator      - Print separator corresponding to number of chars in given 
-##                            string.
-##     print_volume         - Print current volume level.
-##     print_volume_channel - Print volume for all channels.
-##     print_item           - Print either the volume level or the mute status.
-## 
-##     str_to_cap           - Convert the string to the format where first letter is
-##                            capitalized and the rest of the string is lowercase.
-##     gui_display          - Display volume information using the GUI.
-## 
-##     toggle_mute          - Toggle mute for the specified channel.
-##     set_volume           - Set system volume.
-##     set_volume_status    - Turn the volume of all channels on/off.
-##     set_volume_defaults  - Set the default volume values.
-## 
-## 
-## FILE STRUCTURE:
-## 
-##     * Print Program Usage
-##     * Check Channel Existence
-##     * Print Volume
-##     * Convert String Caps
-##     * GUI Volume Notification
-##     * Modify Volume Level
-##     * Control System Volume 
-## 
-## 
-## MODIFICATION HISTORY:
-## 	
-##     gabeg Jan 04 2015 <> Created.
-## 
-##     gabeg Jan 07 2015 <> Added the GUI notification display.
-## 
-##     gabeg Mar 22 2015 <> Added more functionality in case the amixer settings get 
-##                          messed up. This includes specifying a channel to modify, 
-##                          setting all channels on/off, and toggling mute on a 
-##                          channel.
-## 
-##     gabeg Mar 29 2015 <> Can now set a specific channel on/off, and the input 
-##                          channel that the user enters is not case sensitive.
-## 
-##     gabeg Apr 13 2015 <> Added an option to print either the volume level or the
-##                          mute status.
-## 
-## **********************************************************************************
+# ******************************************************************************
+# 
+# Name:    vol
+# Author:  Gabriel Gonzalez
+# Email:   gabeg@bu.edu
+# License: The MIT License (MIT)
+# 
+# Syntax: vol [-h|--help] [--display] [[-p|--print] <item>] [-i|--inc]
+#         [-d|--dec] [[-m|--mute] <channel>] [--on] [--off] [-r|--reset]
+#         [<value>]
+# 
+# Description: Display information on the system volume level.
+# 
+# Notes: None.
+# 
+# **********************************************************************************
 
-
-
-## ================
-## GLOBAL VARIABLES
-## ================
-
-## Program information
+# Program information
 ARGV=("$@")
-PROG_NAME=`basename $0`
+PROG=`basename $0`
 
-## Volume variables
+# Volume variables
 DELTA=5
 CHANNELS=("Master" "Headphone" "Speaker")
 
-## Gui notification bubble
-NOTIFY="noti"
-
-
-
-## ###############################
-## ##### PRINT PROGRAM USAGE #####
-## ###############################
-
-## Print program usage
-function print_usage {
-    echo "Usage: ${PROG_NAME} [-h|--help] [--display] [[-p|--print] <item>]"
-    echo -e "\t[-i|--inc] [-d|--dec] [[-m|--mute] <channel>] [--on] [--off]"
-    echo -e "\t[-r|--reset] [<value>]"
-    exit 1
+# ******************************************************************************
+# Print program usage
+usage()
+{
+    echo "Usage: ${PROG} [options] [value]"
+    echo
+    echo 'Options:'
+    echo '    -h, --help                     Print program usage.'
+    echo '    -p, --print [<channel>]        Print the volume level of one or all channels.'
+    echo '    -i, --inc [<channel>]          Increment the volume level of one or all channels by 5%.'
+    echo '    -d, --dec [<channel>]          Decrement the volume level of one or all channels by 5%.'
+    echo '    -m, --mute [<channel>]         Toggle mute for one or all channels.'
+    echo '    -s, --set <value> [channel]    Set the volume level of one or all channels [0-100]'
+    echo '    -l, --list                     List all volume channels.'
+    echo
+    echo 'Names:'
+    echo '    <channel>    The name of a volume channel.'
 }
 
+# ******************************************************************************
+# Print volume for all volume channels, or the specified volume channel
+print_volume()
+{
+    input=`str_to_cap "$1"`
+    if [ -z "${input}" ]; then
+        channels=("${CHANNELS[@]}")
+    else
+        if [ `is_channel "${channel}"` == false ]; then
+            return
+        fi
+        channels=("${input}")
+    fi
 
+    for chan in "${channels[@]}"; do
+        print_volume_channel "${chan}"
+    done
+}
 
-## ###################################
-## ##### CHECK CHANNEL EXISTENCE #####
-## ###################################
+# ******************************************************************************
+# Print volume channel
+print_volume_channel()
+{
+    if [ `is_channel "$1"` == false ]; then 
+        return
+    fi
 
-## Check if command exists on system
-function check_command {
+    local IFS=$'-'
+    playback=(`amixer get "$1" \
+                   | grep --color=never 'Playback channels' \
+                   | sed 's/^.*.: //'`)
+    for i in "${playback[@]}"; do 
+        name=`echo "${i}" \
+                  | sed 's/^ //; s/ $//'`
+        channel=`amixer get "$1" \
+                     | grep "${name}:"`
+        vol=`echo "${channel}" \
+                 | cut -f2 -d'[' \
+                 | cut -f1 -d'%'`
+        status=`echo "${channel}" \
+                    | grep -m 1 -o "\[off\]\|\[on\]" \
+                    | tr '[' '\0' \
+                    | tr ']' '\0'`
+        echo "$1: ${vol}% - ${name} [${status}]"
+    done
+}
+
+# ******************************************************************************
+# Increment/decrement volume level
+step_volume_level()
+{
+    step="$1"
+    input=`str_to_cap "$2"`
+    if [ -z "${input}" ]; then
+        channels=("${CHANNELS[@]}")
+    else
+        if [ `is_channel "${channel}"` == false ]; then
+            return
+        fi
+        channels=("${input}")
+    fi
+
+    for chan in "${channels[@]}"; do
+        amixer -q set "${chan}" "${step}"
+        print_volume_channel "${chan}"
+    done
+}
+
+# ******************************************************************************
+# Mute all volume channels or specified volume channel
+mute_volume()
+{
+    input=`str_to_cap "$1"`
+    if [ -z "${input}" ]; then
+        channels=("${CHANNELS[@]}")
+    else
+        if [ `is_channel "${input}"` == false ]; then
+            return
+        fi
+        channels=("${input}")
+    fi
+
+    for chan in "${channels[@]}"; do
+        amixer -q set "${chan}" toggle 
+        print_volume_channel "${chan}"
+    done
+}
+
+# ******************************************************************************
+# Change system volume
+set_volume()
+{
+    # Verify integer value was inputted
+    value="$1"
+    if [ -z "${value}" ]; then
+        usage
+        exit 1
+    fi
+    if [ "${value}" -eq "${value}" ] 2>/dev/null; then
+        if [ "${value}" -ge 0 -a "${value}" -le 100 ]; then
+            :
+        else
+            echo "${PROG_NAME}: Incorrect value entered: Value must be between 0-100."
+            exit 1
+        fi
+    else
+        usage
+        exit 1
+    fi
+
+    # Check input chanel
+    input=`str_to_cap "$2"`
+    if [ -z "${input}" ]; then
+        channels=("${CHANNELS[@]}")
+    else
+        if [ `is_channel "${input}"` == false ]; then
+            return
+        fi
+        channels=("${input}")
+    fi
+
+    # Set volume
+    for chan in "${channels[@]}"; do
+        amixer -q sset "${chan}" "${value}%"
+        print_volume_channel "${chan}"
+    done
+}
+
+# ******************************************************************************
+# List volume channels
+list_volume_channels()
+{
+    echo -n 'Channels: '
+    flag=0
+    for chan in "${CHANNELS[@]}"; do
+        if [ ${flag} -eq 0 ]; then
+            echo -n "${chan}"
+        else
+            echo -n ", ${chan}"
+        fi
+        flag=1
+    done
+    echo
+}
+
+# ******************************************************************************
+# Check if command exists on system
+check_command()
+{
     exist=`hash "$1" 2>&1`
-    
     if [ ! -z "${exist}" ]; then
         echo "${PROG_NAME}: Program '$1' does not exist. Please install it and try again."
         exit 1
     fi
 }
 
+# ******************************************************************************
+# Convert string to capitalize first letter and lowercase all other letters
+str_to_cap()
+{
+    if [ -z "$1" ]; then
+        return
+    fi
+    start_letter=`echo "${1:0:1}" | tr '[a-z]' '[A-Z]'`
+    rest_letters=`echo "${1:1}" | tr '[A-Z]' '[a-z]'`
+    echo "${start_letter}${rest_letters}"
+}
 
-
-## Check if a channel exists
-function is_channel {
-    exist=`amixer | grep "$1"`
-    
+# ******************************************************************************
+# Check if channel exists
+is_channel()
+{
+    exist=`amixer | grep 'control' | grep "$1"`
     if [ -z "${exist}" ] || [ -z "$1" ]; then
         echo false
     else
@@ -175,326 +223,48 @@ function is_channel {
     fi
 }
 
-
-
-## ########################
-## ##### PRINT VOLUME #####
-## ########################
-
-## Print separator
-function print_separator {
-    len=`echo "$1" | wc -c`
-    
-    while [ ${len} -gt 1 ]; do 
-        echo -n "="
-        len=$[ ${len} - 1 ]
-    done
-    
-    echo
-}
-
-
-
-## Print volume
-function print_volume {
-    
-    ## Check if input is a channel
-    if [ `is_channel "$1"` == false ]; then 
-        return
-    fi
-    
-    ## Print header
-    if [[ "$1" != "${CHANNELS[0]}" && "$2" == "all" ]]; then echo; fi
-    print_separator "$1"
-    echo "$1"
-    print_separator "$1"
-    
-    ## Playback channels
-    local IFS=$'-'
-    local playback=(`amixer get "$1" \
-                        | grep --color=never "Playback channels" \
-                        | sed 's/^.*.: //'`)
-    
-    ## Channels
-    for i in "${playback[@]}"; do 
-        local name=`echo "${i}" \
-                        | sed 's/^ //; s/ $//'`
-        local channel=`amixer get "$1" \
-                           | grep "${name}:"`
-        local vol=`echo "${channel}" \
-                       | cut -f2 -d'[' \
-                       | cut -f1 -d'%'`
-        local status=`echo "${channel}" \
-                          | grep -m 1 -o "\[off\]\|\[on\]" \
-                          | tr '[' '\0' \
-                          | tr ']' '\0'`
-        
-        echo "Volume: ${vol}% - ${name} [${status}]"
-    done
-}
-
-
-
-## Print all volume channels, or the specified volume channel
-function print_volume_channel {
-    
-    ## Channel was specified
-    input=`str_to_cap "${ARGV[1]}"`
-    
-    if [ ! -z "${input}" ]; then
-        print_volume "${input}"
-        return 0
-    fi 
-    
-    ## Print all channels
-    for chan in "${CHANNELS[@]}"; do
-        print_volume "${chan}" "all"
-    done
-}
-
-
-
-## Print the volume level or mute status
-function print_item {
-    
-    ## Test input
-    case "${ARGV[1]}" in
-        "-v"|"--volume")
-            opt=1
-            ;;
-        "-m"|"--mute")
-            opt=2
-            ;;
-        *)
-            print_usage
-            ;;
-    esac
-    
-    ## All items that can be printed
-    unset ARGV[1]
-    all_items=`amixer get "${CHANNELS[0]}" | tail -1`
-    
-    ## Return desired item
-    if [ ${opt} -eq 1 ]; then
-        echo "${all_items}" | cut -f2 -d'[' | cut -f1 -d'%'
-    else
-        echo "${all_items}" | cut -f3 -d'[' | cut -f1 -d']'
-    fi
-}
-
-
-
-## ###############################
-## ##### CONVERT STRING CAPS #####
-## ###############################
-
-## Convert string to capitalize first letter and lowercase all other letters
-function str_to_cap {
-    start_letter=`echo "${1:0:1}" | tr '[a-z]' '[A-Z]'`
-    rest_letters=`echo "${1:1}" | tr '[A-Z]' '[a-z]'`
-    
-    echo "${start_letter}${rest_letters}"
-}
-
-
-
-## ###################################
-## ##### GUI VOLUME NOTIFICATION #####
-## ###################################
-
-## GUI notification for battery information
-function gui_display {
-    
-    ## Check if notification program exists
-    check_command "${NOTIFY}"
-    
-    ## Display current battery level
-    ${NOTIFY} --time 5 -b "$(print_volume Master)" 
-}
-
-
-
-## ###############################
-## ##### MODIFY VOLUME LEVEL #####
-## ###############################
-
-## Toggle mute for master channel or the specified channel
-function toggle_mute {
-    
-    ## Channel to toggle
-    channel=""
-    
-    ## Check what to toggle
-    case "${ARGV[1]}" in
-        
-        ## Toggle mute for master
-        "")
-            channel="${CHANNELS[0]}"
-            ;;
-        
-        ## Toggle mute for a specific channel
-        *)
-            input=`str_to_cap "${ARGV[1]}"`
-            
-            for chan in "${CHANNELS[@]}"; do
-                if [[ "${input}" == "${chan}" ]]; then
-                    channel="${chan}"
-                    break
-                fi
-            done
-            ;;
-    esac
-    
-    ## Check if channel exists
-    if [ `is_channel "${channel}"` == false ]; then
-        return
-    fi
-    
-    ## Toggle mute
-    amixer -q set "${channel}" toggle 
-    print_volume "${channel}"
-}
-
-
-
-## Change system volume
-function set_volume {    
-    
-    ## Verify integer value was inputted
-    if [ "${ARGV[0]}" -eq "${ARGV[0]}" ] 2>/dev/null; then
-        :
-    else
-        echo "${PROG_NAME}: Incorrect value entered."
-        print_usage
-    fi
-    
-    ## Check if input value is outside of limit range
-    input=${ARGV[0]}
-    
-    if [ ${input} -lt 0 ]; then
-        input=0
-    elif [ ${input} -gt 100 ]; then
-        input=100
-    fi
-    
-    ## Set the current volume level
-    amixer -q cset iface=MIXER,name="Master Playback Volume" "${input}%"
-    
-    ## Display current volume
-    print_volume "${CHANNELS[0]}"
-}
-
-
-
-## Turn volume on/off for all channels, or specified channel
-function set_volume_status {
-    
-    ## Channel was specified
-    input=`str_to_cap "${ARGV[1]}"`
-    
-    if [ ! -z "${input}" ] && `is_channel "${input}"`; then
-        amixer -q set "${input}" "$1" 
-        return 0
-    fi 
-    
-    ## Turn on/off volume for all channels
-    for chan in "${CHANNELS[@]}"; do
-        if `is_channel "${chan}"`; then
-            amixer -q set "${chan}" "$1" 
-        fi
-    done
-}
-
-
-
-## Set default values
-function set_volume_defaults {
-    for chan in "${CHANNELS[@]}"; do
-        if `is_channel "${chan}"`; then
-            if [[ "${chan}" == "${CHANNELS[0]}" ]]; then
-                amixer -q set "${chan}" 50% 
-            else
-                amixer -q set "${chan}" 100% 
-            fi
-        fi
-    done
-}
-
-
-
-## #################################
-## ##### CONTROL SYSTEM VOLUME ##### 
-## #################################
-
+# ******************************************************************************
 ## Control system volume
-function main {
-    
-    ## Check if volume command is present on system
-    check_command "amixer"
-    
-    ## Parse command line arguments
+main()
+{
+    # Parse command line arguments
+    check_command 'amixer'
     case "${ARGV[0]}" in
-        
-        ## Print program usage
-        "-h"|"--help")
-            print_usage
+        # Print program usage
+        ''|'-h'|'--help')
+            usage
+            exit 0
             ;;
-        
-        ## Print current volume level
-        "")
-            print_volume_channel
+        # Print current volume level
+        '-p'|'--print')
+            print_volume "${ARGV[1]}"
             ;;
-        
-        "--display")
-            gui_display
+        # Increment/decrement the volume
+        '-i'|'--inc')
+            step_volume_level ${DELTA}%+ "${ARGV[1]}"
             ;;
-        
-        ## Print item
-        "-p"|"--print")
-            print_item
+        '-d'|'--dec')
+            step_volume_level ${DELTA}%- "${ARGV[1]}"
             ;;
-        
-        ## Increment/decrement the volume
-        "-i"|"--inc")
-            amixer -q set "${CHANNELS[0]}" ${DELTA}%+
-            print_volume "${CHANNELS[0]}"
+        # Toggle mute 
+        '-m'|'--mute')
+            mute_volume "${ARGV[1]}"
             ;;
-        
-        "-d"|"--dec")
-            amixer -q set "${CHANNELS[0]}" ${DELTA}%-
-            print_volume "${CHANNELS[0]}"
+        # Set the volume level
+        '-s'|'--set')
+            set_volume "${ARGV[1]}" "${ARGV[2]}"
             ;;
-        
-        ## Toggle mute 
-        "-m"|"--mute")
-            toggle_mute 
+        # List volume channels
+        '-l'|'--list')
+            list_volume_channels
             ;;
-        
-        ## Turn on/off volume
-        "--on")
-            set_volume_status "on" 
-            print_volume_channel 
-            ;;
-        
-        "--off")
-            set_volume_status "off" 
-            print_volume_channel
-            ;;
-        
-        ## Reset volume of everything to 50%
-        "-r"|"--reset")
-            set_volume_status "on" 
-            set_volume_defaults 
-            print_volume_channel
-            ;;
-        
-        ## Set the volume level
         *)
-            set_volume
+            usage
+            exit 1
+            ;;
     esac
 }
 
-
-
+# ******************************************************************************
 ## Execute volume control
 main
