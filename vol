@@ -66,10 +66,6 @@ print_volume()
 # Print volume channel
 print_volume_channel()
 {
-    if [ `is_channel "$1"` == false ]; then 
-        return
-    fi
-
     local IFS=$'-'
     playback=(`amixer get "$1" \
                    | grep --color=never 'Playback channels' \
@@ -189,6 +185,20 @@ list_volume_channels()
 }
 
 # ******************************************************************************
+# Redefine default global volume channels in case some are not available
+set_global_volume_channels()
+{
+    i=0
+    for chan in "${CHANNELS[@]}"; do
+        if [ `is_channel "${chan}"` == false ]; then
+            unset CHANNELS[$i]
+        fi
+        i=$[ ${i} + 1 ]
+    done
+    CHANNELS=(${CHANNELS[@]})
+}
+
+# ******************************************************************************
 # Check if command exists on system
 check_command()
 {
@@ -229,6 +239,7 @@ main()
 {
     # Parse command line arguments
     check_command 'amixer'
+    set_global_volume_channels
     case "${ARGV[0]}" in
         # Print program usage
         ''|'-h'|'--help')
