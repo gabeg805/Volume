@@ -44,6 +44,57 @@ usage()
 }
 
 # ******************************************************************************
+# Print average volume
+print_average_volume()
+{
+    input=`str_to_cap "$1"`
+    if [ -z "${input}" ]; then
+        channels=("${CHANNELS[@]}")
+    else
+        if [ `is_channel "${channel}"` == false ]; then
+            echo "${PROG}: Invalid channel specified."
+            return 1
+        fi
+        channels=("${input}")
+    fi
+
+    sum=0
+    num=0
+    for chan in "${channels[@]}"; do
+        for val in `print_volume_channel "${chan}" "value"`; do
+            sum=$[ ${sum} + ${val} ]
+            num=$[ ${num} + 1 ]
+        done
+    done
+    echo "$[ ${sum} / ${num} ]%"
+}
+
+# ******************************************************************************
+# Print volume status
+print_volume_status()
+{
+    input=`str_to_cap "$1"`
+    if [ -z "${input}" ]; then
+        channels=("${CHANNELS[@]}")
+    else
+        if [ `is_channel "${channel}"` == false ]; then
+            echo "${PROG}: Invalid channel specified."
+            return 1
+        fi
+        channels=("${input}")
+    fi
+
+    status=off
+    for s in `print_volume_channel "Master" "status"`; do
+        if [ "${s}" == "on" ]; then
+            status="${s}"
+            break
+        fi
+    done
+    echo "${status}"
+}
+
+# ******************************************************************************
 # Print volume for all volume channels, or the specified volume channel
 print_volume()
 {
@@ -52,7 +103,8 @@ print_volume()
         channels=("${CHANNELS[@]}")
     else
         if [ `is_channel "${channel}"` == false ]; then
-            return
+            echo "${PROG}: Invalid channel specified."
+            return 1
         fi
         channels=("${input}")
     fi
@@ -75,14 +127,20 @@ print_volume_channel()
                   | sed 's/^ //; s/ $//'`
         channel=`amixer get "$1" \
                      | grep "${name}:"`
-        vol=`echo "${channel}" \
+        value=`echo "${channel}" \
                  | cut -f2 -d'[' \
                  | cut -f1 -d'%'`
         status=`echo "${channel}" \
                     | grep -m 1 -o "\[off\]\|\[on\]" \
                     | tr '[' '\0' \
                     | tr ']' '\0'`
-        echo "$1: ${vol}% - ${name} [${status}]"
+        if [ "$2" == "value" ]; then
+            echo "${value}"
+        elif [ "$2" == "status" ]; then
+            echo "${status}"
+        else
+            echo "$1: ${value}% - ${name} [${status}]"
+        fi
     done
 }
 
@@ -96,7 +154,8 @@ step_volume_level()
         channels=("${CHANNELS[@]}")
     else
         if [ `is_channel "${channel}"` == false ]; then
-            return
+            echo "${PROG}: Invalid channel specified."
+            return 1
         fi
         channels=("${input}")
     fi
@@ -116,7 +175,8 @@ mute_volume()
         channels=("${CHANNELS[@]}")
     else
         if [ `is_channel "${input}"` == false ]; then
-            return
+            echo "${PROG}: Invalid channel specified."
+            return 1
         fi
         channels=("${input}")
     fi
@@ -245,6 +305,14 @@ main()
         ''|'-h'|'--help')
             usage
             exit 0
+            ;;
+        # Print average volume level (as if Mono)
+        '-P'|'--average')
+            print_average_volume
+            ;;
+        # Print volume status
+        '-S'|'--status')
+            print_volume_status
             ;;
         # Print current volume level
         '-p'|'--print')
