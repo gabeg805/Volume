@@ -15,7 +15,7 @@
 # ******************************************************************************
 
 # Globals
-PROG=`basename $0`
+PROG="${0##*/}"
 DELTA=5
 DEFAULTCONTROLS=("Master" "Headphone" "Speaker")
 
