@@ -6,23 +6,162 @@
 # Email:   gabeg@bu.edu
 # License: The MIT License (MIT)
 # 
-# Syntax: vol [-h|--help] [--display] [[-p|--print] <item>] [-i|--inc]
-#         [-d|--dec] [[-m|--mute] <channel>] [--on] [--off] [-r|--reset]
-#         [<value>]
+# Syntax: vol [options] [args]
 # 
-# Description: Display information on the system volume level.
+# Description: Control and display the system volume.
 # 
 # Notes: None.
 # 
-# **********************************************************************************
+# ******************************************************************************
 
-# Program information
-ARGV=("$@")
+# Globals
 PROG=`basename $0`
-
-# Volume variables
 DELTA=5
-CHANNELS=("Master" "Headphone" "Speaker")
+DEFAULTCONTROLS=("Master" "Headphone" "Speaker")
+
+# Options
+VERBOSE=
+
+# Source utility
+. ../lib/util.sh
+
+# Exit statuses
+STATUS_NORMAL=0
+STATUS_GETOPT=1
+STATUS_ARGS=2
+STATUS_CONTROL=10
+STATUS_SETVAL=11
+
+
+# ******************************************************************************
+## Control system volume
+main()
+{
+    [ $# -eq 0 ] && usage && exit ${STATUS_NORMAL}
+
+    short="hvc:ps:idmlPS"
+    long="help,verbose,control:,print,set:,inc,dec,mute,list,average,status"
+    args=$(getopt -o "${short}" --long "${long}" --name "${PROG}" -- "${@}")
+
+    [ $? -ne 0 ] && usage && exit ${STATUS_GETOPT}
+    eval set -- "${args}"
+
+    # Options
+    local PRINT=
+    local SET=
+    local INCREMENT=
+    local DECREMENT=
+    local MUTE=
+    local LIST=
+    local AVERAGE=
+    local STATUS=
+    local CONTROL=Master
+
+    # Parse command line arguments
+    while true; do
+        case "${1}" in
+            # Print program usage
+            -h|--help)
+                usage
+                exit 0
+                ;;
+
+            # Verbose
+            -v|--verbose)
+                VERBOSE=true
+                ;;
+
+            # Specify a control
+            -c|--control)
+                shift
+                CONTROL="${1}"
+                ;;
+
+            # Print current volume level
+            -p|--print)
+                check_multi_arg "PRINT"
+                PRINT=true
+                ;;
+
+            # Set the volume level
+            -s|--set)
+                shift
+                check_multi_arg "SET"
+                SET="${1}"
+                ;;
+
+            # Increment the volume
+            -i|--inc)
+                check_multi_arg "INCREMENT"
+                INCREMENT=true
+                ;;
+
+            # Decrement the volume
+            -d|--dec)
+                check_multi_arg "DECREMENT"
+                DECREMENT=true
+                ;;
+
+            # Toggle mute 
+            -m|--mute)
+                check_multi_arg "MUTE"
+                MUTE=true
+                ;;
+
+            # List volume channels
+            -l|--list)
+                check_multi_arg "LIST"
+                LIST=true
+                ;;
+
+            # Print average volume level (as if Mono)
+            -P|--average)
+                check_multi_arg "AVERAGE"
+                AVERAGE=true
+                ;;
+
+            # Print volume status
+            -S|--status)
+                check_multi_arg "STATUS"
+                STATUS=true
+                ;;
+
+            # End of options
+            --)
+                break
+                ;;
+        esac
+        shift
+    done
+
+    # Setup channels
+    setup_default_controls
+    CONTROL=($(get_control "${CONTROL}"))
+    if [ $? -ne 0 ]; then
+        exit ${STATUS_CONTROL}
+    fi
+
+    # Run options
+    if [ -n "${PRINT}" ]; then
+        print_volume "${CONTROL[@]}"
+    elif [ -n "${SET}" ]; then
+        set_volume "${SET}" "${CONTROL[@]}"
+    elif [ -n "${INCREMENT}" ]; then
+        step_volume_level ${DELTA}%+ "${CONTROL[@]}"
+    elif [ -n "${DECREMENT}" ]; then
+        step_volume_level ${DELTA}%- "${CONTROL[@]}"
+    elif [ -n "${MUTE}" ]; then
+        mute_volume "${CONTROL[@]}"
+    elif [ -n "${LIST}" ]; then
+        list_volume_controls
+    elif [ -n "${AVERAGE}" ]; then
+        print_average_volume "${CONTROL[@]}"
+    elif [ -n "${STATUS}" ]; then
+        print_volume_status "${CONTROL[@]}"
+    else
+        :
+    fi
+}
 
 # ******************************************************************************
 # Print program usage
@@ -30,117 +169,102 @@ usage()
 {
     echo "Usage: ${PROG} [options] [value]"
     echo
-    echo 'Options:'
-    echo '    -h, --help                     Print program usage.'
-    echo '    -p, --print [<channel>]        Print the volume level of one or all channels.'
-    echo '    -i, --inc [<channel>]          Increment the volume level of one or all channels by 5%.'
-    echo '    -d, --dec [<channel>]          Decrement the volume level of one or all channels by 5%.'
-    echo '    -m, --mute [<channel>]         Toggle mute for one or all channels.'
-    echo '    -s, --set <value> [channel]    Set the volume level of one or all channels [0-100]'
-    echo '    -l, --list                     List all volume channels.'
+    echo "Options:"
+    echo "    -h, --help"
+    echo "        Print program usage."
     echo
-    echo 'Names:'
-    echo '    <channel>    The name of a volume channel.'
+    echo "    -v, --verbose"
+    echo "        Verbose output."
+    echo
+    echo "    -c, --control <control>"
+    echo "        Specify a control to act on."
+    echo
+    echo "    -p, --print"
+    echo "        Print the volume level of the specified control, or the"
+    echo "        Master control, if unspecified. See '-c' for more info."
+    echo
+    echo "    -s, --set <value>"
+    echo "        Set the volume level of the specified control, or the"
+    echo "        Master control, if unspecified. Allowed values: [0 - 100]."
+    echo "         See '-c' for more info."
+    echo
+    echo "    -i, --inc"
+    echo "        Increment the volume level of the specified control, or the"
+    echo "        Master control, if unspecified, by 5%. See '-c' for more info."
+    echo
+    echo "    -d, --dec"
+    echo "        Decrement the volume level of the specified control, or the"
+    echo "        Master control, if unspecified, by 5%. See '-c' for more info."
+    echo
+    echo "    -m, --mute"
+    echo "        Toggle mute for the specified control, or the Master control,"
+    echo "        if unspecified. See '-c' for more info."
+    echo
+    echo "    -l, --list"
+    echo "        List all (useful) volume controls."
+    echo
+    echo "    -P, --average"
+    echo "        Print the average volume level of the specified control, or"
+    echo "        the Master control, if unspecified. See '-c' for more info."
+    echo
+    echo "    -S, --status"
+    echo "        Print the mute status of the specified control, or the Master"
+    echo "        control, if unspecified. See '-c' for more info."
+    echo
+    echo "Arguments:"
+    echo "    <control>"
+    echo "        The name of a volume control."
+    echo
+    echo "    <value>"
+    echo "        An integer number from [0 - 100]."
 }
 
 # ******************************************************************************
-# Print average volume
-print_average_volume()
-{
-    input=`str_to_cap "$1"`
-    if [ -z "${input}" ]; then
-        channels=("${CHANNELS[@]}")
-    else
-        if [ `is_channel "${channel}"` == false ]; then
-            echo "${PROG}: Invalid channel specified."
-            return 1
-        fi
-        channels=("${input}")
-    fi
-
-    sum=0
-    num=0
-    for chan in "${channels[@]}"; do
-        for val in `print_volume_channel "${chan}" "value"`; do
-            sum=$[ ${sum} + ${val} ]
-            num=$[ ${num} + 1 ]
-        done
-    done
-    echo "$[ ${sum} / ${num} ]%"
-}
-
-# ******************************************************************************
-# Print volume status
-print_volume_status()
-{
-    input=`str_to_cap "$1"`
-    if [ -z "${input}" ]; then
-        channels=("${CHANNELS[@]}")
-    else
-        if [ `is_channel "${channel}"` == false ]; then
-            echo "${PROG}: Invalid channel specified."
-            return 1
-        fi
-        channels=("${input}")
-    fi
-
-    status=off
-    for s in `print_volume_channel "Master" "status"`; do
-        if [ "${s}" == "on" ]; then
-            status="${s}"
-            break
-        fi
-    done
-    echo "${status}"
-}
-
-# ******************************************************************************
-# Print volume for all volume channels, or the specified volume channel
+# Print volume for specified volume channel(s)
 print_volume()
 {
-    input=`str_to_cap "$1"`
-    if [ -z "${input}" ]; then
-        channels=("${CHANNELS[@]}")
-    else
-        if [ `is_channel "${channel}"` == false ]; then
-            echo "${PROG}: Invalid channel specified."
-            return 1
-        fi
-        channels=("${input}")
-    fi
-
-    for chan in "${channels[@]}"; do
-        print_volume_channel "${chan}"
+    local controls=("${@}")
+    for c in "${controls[@]}"; do
+        print_control_volume "${c}"
     done
 }
 
 # ******************************************************************************
-# Print volume channel
-print_volume_channel()
+# Print control volume
+print_control_volume()
 {
-    local IFS=$'-'
-    playback=(`amixer get "$1" \
-                   | grep --color=never 'Playback channels' \
-                   | sed 's/^.*.: //'`)
-    for i in "${playback[@]}"; do 
-        name=`echo "${i}" \
-                  | sed 's/^ //; s/ $//'`
-        channel=`amixer get "$1" \
-                     | grep "${name}:"`
-        value=`echo "${channel}" \
-                 | cut -f2 -d'[' \
-                 | cut -f1 -d'%'`
-        status=`echo "${channel}" \
-                    | grep -m 1 -o "\[off\]\|\[on\]" \
-                    | tr '[' '\0' \
-                    | tr ']' '\0'`
-        if [ "$2" == "value" ]; then
-            echo "${value}"
-        elif [ "$2" == "status" ]; then
-            echo "${status}"
-        else
-            echo "$1: ${value}% - ${name} [${status}]"
-        fi
+    local control="${1}"
+    local channel=($(get_channel "${c}"))
+    local volume=($(get_channel_volume "${c}"))
+    local status=($(get_channel_status "${c}"))
+    local i=
+    for (( i=0; i<${#channel[@]}; i++ )); do
+        echo "${control}: ${volume[${i}]}% (${channel[${i}]}) [${status[${i}]}]"
+    done
+}
+
+# ******************************************************************************
+# Set system volume
+set_volume()
+{
+    local value="${1}"
+    shift
+    local controls=("${@}")
+
+    # Verify integer value was inputted
+    if ! is_integer "${value}"; then
+        print_err "Unable to set volume: Input value is not an integer."
+        exit ${STATUS_SETVAL}
+    fi
+    if [ ${value} -lt 0 -o ${value} -gt 100 ]; then
+        print_err "Unable to set volume: Value must be between 0-100."
+        exit ${STATUS_SETVAL}
+    fi
+
+    # Set volume
+    for c in "${controls[@]}"; do
+        amixer -q sset "${c}" "${value}%"
+        print_control_volume "${c}"
     done
 }
 
@@ -148,202 +272,255 @@ print_volume_channel()
 # Increment/decrement volume level
 step_volume_level()
 {
-    step="$1"
-    input=`str_to_cap "$2"`
-    if [ -z "${input}" ]; then
-        channels=("${CHANNELS[@]}")
-    else
-        if [ `is_channel "${channel}"` == false ]; then
-            echo "${PROG}: Invalid channel specified."
-            return 1
-        fi
-        channels=("${input}")
-    fi
-
-    for chan in "${channels[@]}"; do
-        amixer -q set "${chan}" "${step}"
-        print_volume_channel "${chan}"
+    local step="${1}"
+    shift
+    local controls=("${@}")
+    for c in "${controls[@]}"; do
+        amixer -q set "${c}" "${step}"
+        print_control_volume "${c}"
     done
 }
 
 # ******************************************************************************
-# Mute all volume channels or specified volume channel
+# Mute specified volume channel(s)
 mute_volume()
 {
-    input=`str_to_cap "$1"`
-    if [ -z "${input}" ]; then
-        channels=("${CHANNELS[@]}")
-    else
-        if [ `is_channel "${input}"` == false ]; then
-            echo "${PROG}: Invalid channel specified."
-            return 1
-        fi
-        channels=("${input}")
-    fi
-
-    for chan in "${channels[@]}"; do
-        amixer -q set "${chan}" toggle 
-        print_volume_channel "${chan}"
-    done
-}
-
-# ******************************************************************************
-# Change system volume
-set_volume()
-{
-    # Verify integer value was inputted
-    value="$1"
-    if [ -z "${value}" ]; then
-        usage
-        exit 1
-    fi
-    if [ "${value}" -eq "${value}" ] 2>/dev/null; then
-        if [ "${value}" -ge 0 -a "${value}" -le 100 ]; then
-            :
-        else
-            echo "${PROG_NAME}: Incorrect value entered: Value must be between 0-100."
-            exit 1
-        fi
-    else
-        usage
-        exit 1
-    fi
-
-    # Check input chanel
-    input=`str_to_cap "$2"`
-    if [ -z "${input}" ]; then
-        channels=("${CHANNELS[@]}")
-    else
-        if [ `is_channel "${input}"` == false ]; then
-            return
-        fi
-        channels=("${input}")
-    fi
-
-    # Set volume
-    for chan in "${channels[@]}"; do
-        amixer -q sset "${chan}" "${value}%"
-        print_volume_channel "${chan}"
+    local channels=("${@}")
+    for c in "${channels[@]}"; do
+        amixer -q set "${c}" toggle 
+        print_control_volume "${c}"
     done
 }
 
 # ******************************************************************************
 # List volume channels
-list_volume_channels()
+list_volume_controls()
 {
-    echo -n 'Channels: '
-    flag=0
-    for chan in "${CHANNELS[@]}"; do
-        if [ ${flag} -eq 0 ]; then
-            echo -n "${chan}"
-        else
-            echo -n ", ${chan}"
-        fi
-        flag=1
+    local first=true
+    echo "Channels:"
+    for c in "${DEFAULTCONTROLS[@]}"; do
+        echo "* ${c}"
     done
-    echo
 }
 
 # ******************************************************************************
-# Redefine default global volume channels in case some are not available
-set_global_volume_channels()
+# Print average volume
+print_average_volume()
 {
-    i=0
-    for chan in "${CHANNELS[@]}"; do
-        if [ `is_channel "${chan}"` == false ]; then
-            unset CHANNELS[$i]
+    local controls=("${@}")
+
+    # Calculate average volume
+    sum=0
+    num=0
+    for c in "${controls[@]}"; do
+        for val in $(get_channel_volume "${c}"); do
+            sum=$[ ${sum} + ${val} ]
+            num=$[ ${num} + 1 ]
+        done
+        echo "${c}: $[ ${sum} / ${num} ]%"
+    done
+}
+
+# ******************************************************************************
+# Print volume status
+print_volume_status()
+{
+    local controls=("${@}")
+    local status=
+    for c in "${controls[@]}"; do
+        status=off
+        for s in $(get_channel_status "${c}"); do
+            if [ "${s}" == "on" ]; then
+                status="${s}"
+                break
+            fi
+        done
+        echo "${c}: ${status}"
+    done
+}
+
+# ******************************************************************************
+# Setup default channels
+setup_default_controls()
+{
+    local i=0
+    for c in "${DEFAULTCONTROLS[@]}"; do
+        if ! is_control "${c}"; then
+            unset CONTROLS[${i}]
         fi
         i=$[ ${i} + 1 ]
     done
-    CHANNELS=(${CHANNELS[@]})
+    DEFAULTCONTROLS=(${DEFAULTCONTROLS[@]})
 }
 
 # ******************************************************************************
-# Check if command exists on system
-check_command()
+# Return specified channel(s)
+get_control()
 {
-    exist=`hash "$1" 2>&1`
-    if [ ! -z "${exist}" ]; then
-        echo "${PROG_NAME}: Program '$1' does not exist. Please install it and try again."
-        exit 1
-    fi
-}
+    local channel="${1}"
 
-# ******************************************************************************
-# Convert string to capitalize first letter and lowercase all other letters
-str_to_cap()
-{
-    if [ -z "$1" ]; then
-        return
-    fi
-    start_letter=`echo "${1:0:1}" | tr '[a-z]' '[A-Z]'`
-    rest_letters=`echo "${1:1}" | tr '[A-Z]' '[a-z]'`
-    echo "${start_letter}${rest_letters}"
-}
-
-# ******************************************************************************
-# Check if channel exists
-is_channel()
-{
-    exist=`amixer | grep 'control' | grep "$1"`
-    if [ -z "${exist}" ] || [ -z "$1" ]; then
-        echo false
-    else
-        echo true
-    fi
-}
-
-# ******************************************************************************
-## Control system volume
-main()
-{
-    # Parse command line arguments
-    check_command 'amixer'
-    set_global_volume_channels
-    case "${ARGV[0]}" in
-        # Print program usage
-        ''|'-h'|'--help')
-            usage
-            exit 0
-            ;;
-        # Print average volume level (as if Mono)
-        '-P'|'--average')
-            print_average_volume
-            ;;
-        # Print volume status
-        '-S'|'--status')
-            print_volume_status
-            ;;
-        # Print current volume level
-        '-p'|'--print')
-            print_volume "${ARGV[1]}"
-            ;;
-        # Increment/decrement the volume
-        '-i'|'--inc')
-            step_volume_level ${DELTA}%+ "${ARGV[1]}"
-            ;;
-        '-d'|'--dec')
-            step_volume_level ${DELTA}%- "${ARGV[1]}"
-            ;;
-        # Toggle mute 
-        '-m'|'--mute')
-            mute_volume "${ARGV[1]}"
-            ;;
-        # Set the volume level
-        '-s'|'--set')
-            set_volume "${ARGV[1]}" "${ARGV[2]}"
-            ;;
-        # List volume channels
-        '-l'|'--list')
-            list_volume_channels
-            ;;
+    # Determine which channel(s) to return
+    case "${channel}" in
+        all) echo "${DEFAULTCONTROLS[@]}" ;;
         *)
-            usage
-            exit 1
+            channel=$(str_to_capital "${channel}")
+            if is_control "${channel}"; then
+                echo "${channel}"
+            else
+                print_err "Invalid channel specified."
+                exit ${STATUS_CONTROL}
+            fi
             ;;
     esac
 }
 
 # ******************************************************************************
-## Execute volume control
-main
+# Return playback channel(s)
+get_channel()
+{
+    amixer get "${1}" \
+        | grep --color=never 'Playback channels' \
+        | sed -e 's/^.*.: //' -e 's/Front Left/Front-Left/' \
+        -e 's/Front Right/Front-Right/' -e 's/ - /\n/'
+}
+
+# ******************************************************************************
+# Return channel volume
+get_channel_volume()
+{
+    local control="${1}"
+    local line=
+    for c in $(get_channel "${control}"); do
+        c=$(echo "${c}" | tr '-' ' ')
+        line=$(amixer get "${control}" | grep "${c}:")
+        volume=$(echo "${line}" | cut -f2 -d'[' | cut -f1 -d'%')
+        echo "${volume}"
+    done
+}
+
+# ******************************************************************************
+# Return playback channel status
+get_channel_status()
+{
+    local control="${1}"
+    local line=
+    for c in $(get_channel "${control}"); do
+        c=$(echo "${c}" | tr '-' ' ')
+        line=$(amixer get "${control}" | grep "${c}:")
+        status=$(echo "${line}" \
+                    | grep -m 1 -o '\[off\]\|\[on\]' \
+                    | tr -d '[' \
+                    | tr -d ']')
+        echo "${status}"
+    done
+}
+
+# ******************************************************************************
+# Check if control exists
+is_control()
+{
+    local channel="${1}"
+    if [ -z "${channel}" ]; then
+        return 1
+    fi
+
+    local exists=$(amixer | grep "control" | grep "${channel}")
+    if [ -z "${exists}" ]; then
+        return 1
+    fi
+    return 0
+}
+
+# ******************************************************************************
+# Check if mulitple arguments were used when they should not have
+check_multi_arg()
+{
+    case "${1}" in
+        PRINT)
+            if [ -n "${SET}" -o -n "${INCREMENT}" -o -n "${DECREMENT}" \
+                -o -n "${MUTE}" -o -n "${LIST}" -o -n "${AVERAGE}" \
+                -o -n "${STATUS}" ]
+            then
+                print_err "Unable to print volume level: Must specify only one option."
+                exit ${STATUS_ARGS}
+            fi
+            ;;
+
+        SET)
+            if [ -n "${PRINT}" -o -n "${INCREMENT}" -o -n "${DECREMENT}" \
+                -o -n "${MUTE}" -o -n "${LIST}" -o -n "${AVERAGE}" \
+                -o -n "${STATUS}" ]
+            then
+                print_err "Unable to set volume level: Must specify only one option."
+                exit ${STATUS_ARGS}
+            fi
+            ;;
+
+        INCREMENT)
+            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${DECREMENT}" \
+                -o -n "${MUTE}" -o -n "${LIST}" -o -n "${AVERAGE}" \
+                -o -n "${STATUS}" ]
+            then
+                print_err "Unable to increment volume level: Must specify only one option."
+                exit ${STATUS_ARGS}
+            fi
+            ;;
+
+        DECREMENT)
+            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${INCREMENT}" \
+                -o -n "${DECREMENT}" -o -n "${MUTE}" -o -n "${LIST}" \
+                -o -n "${AVERAGE}" -o -n "${STATUS}" ]
+            then
+                print_err "Unable to decrement volume level: Must specify only one option."
+                exit ${STATUS_ARGS}
+            fi
+            ;;
+
+        MUTE)
+            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${INCREMENT}" \
+                -o -n "${DECREMENT}" -o -n "${LIST}" -o -n "${AVERAGE}" \
+                -o -n "${STATUS}" ]
+            then
+                print_err "Unable to toggle mute: Must specify only one option."
+                exit ${STATUS_ARGS}
+            fi
+            ;;
+
+        LIST)
+            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${INCREMENT}" \
+                -o -n "${DECREMENT}" -o -n "${MUTE}" -o -n "${AVERAGE}" \
+                -o -n "${STATUS}" ]
+            then
+                print_err "Unable to list volume channels: Must specify only one option."
+                exit ${STATUS_ARGS}
+            fi
+            ;;
+
+        AVERAGE)
+            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${INCREMENT}" \
+                -o -n "${DECREMENT}" -o -n "${MUTE}" -o -n "${LIST}" \
+                -o -n "${STATUS}" ]
+            then
+                print_err "Unable to print average volume: Must specify only one option."
+                exit ${STATUS_ARGS}
+            fi
+            ;;
+
+        STATUS)
+            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${INCREMENT}" \
+                -o -n "${DECREMENT}" -o -n "${MUTE}" -o -n "${LIST}" \
+                -o -n "${AVERAGE}" ]
+            then
+                print_err "Unable to print volume status: Must specify only one option."
+                exit ${STATUS_ARGS}
+            fi
+            ;;
+
+        *)
+            ;;
+    esac
+}
+
+# ******************************************************************************
+# Run script
+main "${@}"
