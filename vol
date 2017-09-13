@@ -16,6 +16,7 @@
 
 # Globals
 PROG="${0##*/}"
+PROGDIR=$(dirname "$(readlink -f "${0}")")
 DELTA=5
 DEFAULTCONTROLS=("Master" "Headphone" "Speaker")
 
@@ -23,7 +24,7 @@ DEFAULTCONTROLS=("Master" "Headphone" "Speaker")
 VERBOSE=
 
 # Source utility
-. ../lib/util.sh
+. "${PROGDIR}/../lib/bash/util.sh"
 
 # Exit statuses
 STATUS_NORMAL=0
