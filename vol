@@ -235,48 +235,6 @@ usage()
 }
 
 # ******************************************************************************
-# Return average volume
-get_average_volume()
-{
-    local control="${1}"
-
-    # Calculate average volume
-    sum=0
-    num=0
-    for val in $(get_channel_volume "${control}"); do
-        sum=$[ ${sum} + ${val} ]
-        num=$[ ${num} + 1 ]
-    done
-
-    if [ ${num} -eq 0 ]; then
-        echo 0
-    else
-        echo "$[ ${sum} / ${num} ]"
-    fi
-}
-
-# ******************************************************************************
-# Return average mute status
-get_average_mute()
-{
-    local control="${1}"
-
-    # Calculate average volume
-    for status in $(get_channel_status "${control}"); do
-        case "${status}" in
-            on)
-                echo on
-                return
-                ;;
-
-            *) ;;
-        esac
-    done
-
-    echo off
-}
-
-# ******************************************************************************
 # Print volume for specified volume channel(s)
 print_volume()
 {
@@ -403,6 +361,48 @@ setup_default_controls()
         i=$[ ${i} + 1 ]
     done
     DEFAULTCONTROLS=(${DEFAULTCONTROLS[@]})
+}
+
+# ******************************************************************************
+# Return average volume
+get_average_volume()
+{
+    local control="${1}"
+
+    # Calculate average volume
+    sum=0
+    num=0
+    for val in $(get_channel_volume "${control}"); do
+        sum=$[ ${sum} + ${val} ]
+        num=$[ ${num} + 1 ]
+    done
+
+    if [ ${num} -eq 0 ]; then
+        echo 0
+    else
+        echo "$[ ${sum} / ${num} ]"
+    fi
+}
+
+# ******************************************************************************
+# Return average mute status
+get_average_mute()
+{
+    local control="${1}"
+
+    # Calculate average volume
+    for status in $(get_channel_status "${control}"); do
+        case "${status}" in
+            on)
+                echo on
+                return
+                ;;
+
+            *) ;;
+        esac
+    done
+
+    echo off
 }
 
 # ******************************************************************************
