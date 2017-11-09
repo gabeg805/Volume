@@ -17,11 +17,12 @@
 # Globals
 PROG="${0##*/}"
 PROGDIR=$(dirname "$(readlink -f "${0}")")
-DELTA=5
 DEFAULTCONTROLS=("Master" "Headphone" "Speaker")
 
 # Options
 VERBOSE=
+AVERAGE=
+DELTA=5
 
 # Source utility
 . "${PROGDIR}/../lib/bash/util.sh"
@@ -40,8 +41,8 @@ main()
 {
     [ $# -eq 0 ] && usage && exit ${STATUS_NORMAL}
 
-    short="hvc:ps:idmlPS"
-    long="help,verbose,control:,print,set:,inc,dec,mute,list,average,status"
+    short="hvc:ps:idmlDAS"
+    long="help,verbose,control:,print,set:,inc,dec,mute,list,delta,average,status"
     args=$(getopt -o "${short}" --long "${long}" --name "${PROG}" -- "${@}")
 
     [ $? -ne 0 ] && usage && exit ${STATUS_GETOPT}
@@ -54,7 +55,6 @@ main()
     local DECREMENT=
     local MUTE=
     local LIST=
-    local AVERAGE=
     local STATUS=
     local CONTROL=Master
 
@@ -115,9 +115,19 @@ main()
                 LIST=true
                 ;;
 
+            # Set delta value
+            -D|--delta)
+                shift
+                if ! is_integer "${1}"; then
+                    print_err "Delta is not an integer '${1}'"
+                    return ${STATUS_ARGS}
+                fi
+
+                DELTA="${1}"
+                ;;
+
             # Print average volume level (as if Mono)
-            -P|--average)
-                check_multi_arg "AVERAGE"
+            -A|--average)
                 AVERAGE=true
                 ;;
 
@@ -155,8 +165,6 @@ main()
         mute_volume "${CONTROL[@]}"
     elif [ -n "${LIST}" ]; then
         list_volume_controls
-    elif [ -n "${AVERAGE}" ]; then
-        print_average_volume "${CONTROL[@]}"
     elif [ -n "${STATUS}" ]; then
         print_volume_status "${CONTROL[@]}"
     else
@@ -204,7 +212,10 @@ usage()
     echo "    -l, --list"
     echo "        List all (useful) volume controls."
     echo
-    echo "    -P, --average"
+    echo "    -d, --delta <delta>"
+    echo "        Set the delta value when incrementing or decrementing volume."
+    echo
+    echo "    -A, --average"
     echo "        Print the average volume level of the specified control, or"
     echo "        the Master control, if unspecified. See '-c' for more info."
     echo
@@ -216,8 +227,53 @@ usage()
     echo "    <control>"
     echo "        The name of a volume control."
     echo
+    echo "    <delta>"
+    echo "        Value to increase/decrease volume by."
+    echo
     echo "    <value>"
     echo "        An integer number from [0 - 100]."
+}
+
+# ******************************************************************************
+# Return average volume
+get_average_volume()
+{
+    local control="${1}"
+
+    # Calculate average volume
+    sum=0
+    num=0
+    for val in $(get_channel_volume "${control}"); do
+        sum=$[ ${sum} + ${val} ]
+        num=$[ ${num} + 1 ]
+    done
+
+    if [ ${num} -eq 0 ]; then
+        echo 0
+    else
+        echo "$[ ${sum} / ${num} ]"
+    fi
+}
+
+# ******************************************************************************
+# Return average mute status
+get_average_mute()
+{
+    local control="${1}"
+
+    # Calculate average volume
+    for status in $(get_channel_status "${control}"); do
+        case "${status}" in
+            on)
+                echo on
+                return
+                ;;
+
+            *) ;;
+        esac
+    done
+
+    echo off
 }
 
 # ******************************************************************************
@@ -225,6 +281,7 @@ usage()
 print_volume()
 {
     local controls=("${@}")
+
     for c in "${controls[@]}"; do
         print_control_volume "${c}"
     done
@@ -235,10 +292,22 @@ print_volume()
 print_control_volume()
 {
     local control="${1}"
-    local channel=($(get_channel "${c}"))
-    local volume=($(get_channel_volume "${c}"))
-    local status=($(get_channel_status "${c}"))
+    local channel=
+    local volume=
+    local status=
     local i=
+
+    if [ -n "${AVERAGE}" ]; then
+        volume="$(get_average_volume "${control}")"
+        status="$(get_average_mute "${control}")"
+        echo "${control}: ${volume}% [${status}]"
+        return
+    fi
+
+    channel=($(get_channel "${control}"))
+    volume=($(get_channel_volume "${control}"))
+    status=($(get_channel_status "${control}"))
+
     for (( i=0; i<${#channel[@]}; i++ )); do
         echo "${control}: ${volume[${i}]}% (${channel[${i}]}) [${status[${i}]}]"
     done
@@ -301,24 +370,6 @@ list_volume_controls()
     echo "Channels:"
     for c in "${DEFAULTCONTROLS[@]}"; do
         echo "* ${c}"
-    done
-}
-
-# ******************************************************************************
-# Print average volume
-print_average_volume()
-{
-    local controls=("${@}")
-
-    # Calculate average volume
-    sum=0
-    num=0
-    for c in "${controls[@]}"; do
-        for val in $(get_channel_volume "${c}"); do
-            sum=$[ ${sum} + ${val} ]
-            num=$[ ${num} + 1 ]
-        done
-        echo "${c}: $[ ${sum} / ${num} ]%"
     done
 }
 
