@@ -1,15 +1,12 @@
-# VOL
+# Vol
 
-## What is it?
+## Introduction
 
 Control and display the system volume.
 
-## Requirements
+## Dependencies
 
-```
 - amixer
-```
-
-## Installation
-
-None. Can be run as is.
+- [Aria Notification Bubble](https://github.com/gabeg805/aria)
+- Command Line Parser library
+- I/O library

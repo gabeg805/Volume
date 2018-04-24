@@ -1,33 +1,32 @@
 #!/bin/bash
-# ******************************************************************************
+# ------------------------------------------------------------------------------
 # 
-# Name:    vol
-# Author:  Gabriel Gonzalez
-# Email:   gabeg@bu.edu
-# License: The MIT License (MIT)
+# File: vol
+# Author: Gabriel Gonzalez
 # 
-# Syntax: vol [options] [args]
+# Brief: Control and display the system volume.
 # 
-# Description: Control and display the system volume.
-# 
-# Notes: None.
-# 
-# ******************************************************************************
+# ------------------------------------------------------------------------------
+
+##
+# Source utilities.
+##
+. "commandline.sh"
+. "io.sh"
 
 # Globals
 PROG="${0##*/}"
 PROGDIR=$(dirname "$(readlink -f "${0}")")
 DEFAULTCONTROLS=("Master" "Headphone" "Speaker")
 
-# Options
+##
+# Options.
+##
 VERBOSE=
-AVERAGE=
-DELTA=5
 
-# Source utility
-. "${PROGDIR}/../lib/bash/util.sh"
-
-# Exit statuses
+##
+# Exit statuses.
+##
 STATUS_NORMAL=0
 STATUS_GETOPT=1
 STATUS_ARGS=2
@@ -35,239 +34,103 @@ STATUS_CONTROL=10
 STATUS_SETVAL=11
 
 
-# ******************************************************************************
-## Control system volume
+##
+# Control volume.
+##
 main()
 {
-    [ $# -eq 0 ] && usage && exit ${STATUS_NORMAL}
-
-    short="hvc:ps:idmlDAS"
-    long="help,verbose,control:,print,set:,inc,dec,mute,list,delta,average,status"
-    args=$(getopt -o "${short}" --long "${long}" --name "${PROG}" -- "${@}")
-
-    [ $? -ne 0 ] && usage && exit ${STATUS_GETOPT}
-    eval set -- "${args}"
-
-    # Options
-    local PRINT=
-    local SET=
-    local INCREMENT=
-    local DECREMENT=
-    local MUTE=
-    local LIST=
-    local STATUS=
-    local CONTROL=Master
-
-    # Parse command line arguments
-    while true; do
-        case "${1}" in
-            # Print program usage
-            -h|--help)
-                usage
-                exit 0
-                ;;
-
-            # Verbose
-            -v|--verbose)
-                VERBOSE=true
-                ;;
-
-            # Specify a control
-            -c|--control)
-                shift
-                CONTROL="${1}"
-                ;;
-
-            # Print current volume level
-            -p|--print)
-                check_multi_arg "PRINT"
-                PRINT=true
-                ;;
-
-            # Set the volume level
-            -s|--set)
-                shift
-                check_multi_arg "SET"
-                SET="${1}"
-                ;;
-
-            # Increment the volume
-            -i|--inc)
-                check_multi_arg "INCREMENT"
-                INCREMENT=true
-                ;;
-
-            # Decrement the volume
-            -d|--dec)
-                check_multi_arg "DECREMENT"
-                DECREMENT=true
-                ;;
-
-            # Toggle mute 
-            -m|--mute)
-                check_multi_arg "MUTE"
-                MUTE=true
-                ;;
-
-            # List volume channels
-            -l|--list)
-                check_multi_arg "LIST"
-                LIST=true
-                ;;
-
-            # Set delta value
-            -D|--delta)
-                shift
-                if ! is_integer "${1}"; then
-                    print_err "Delta is not an integer '${1}'"
-                    return ${STATUS_ARGS}
-                fi
-
-                DELTA="${1}"
-                ;;
-
-            # Print average volume level (as if Mono)
-            -A|--average)
-                AVERAGE=true
-                ;;
-
-            # Print volume status
-            -S|--status)
-                check_multi_arg "STATUS"
-                STATUS=true
-                ;;
-
-            # End of options
-            --)
-                break
-                ;;
-        esac
-        shift
-    done
-
-    # Setup channels
-    setup_default_controls
-    CONTROL=($(get_control "${CONTROL}"))
-    if [ $? -ne 0 ]; then
-        exit ${STATUS_CONTROL}
+    cli_options "-h|--help|Print program usage." \
+                "-v|--verbose|Verbose output." \
+                "-c|--control=control:|A volume control to act on." \
+                "-d|--decrement|Decrement the volume level by the amount set by '-D'." \
+                "-i|--increment|Increment the volume level by the amount set by '-D'." \
+                "-l|--list|List all the volume controls." \
+                "-m|--mute|Toggle mute." \
+                "-s|--set=value:|Set the volume to the desired level. [Range: 0 - 100]." \
+                "-A|--average|Print the average volume level." \
+                "-D|--delta=value:|Set the amount to increment/decrement the volume. [Default: 5]" \
+                "-S|--status|Print the mute status."
+    if [ $# -eq 0 ]
+    then
+        volume_print "Master"
+        exit $?
+    else
+        cli_parse "${@}"
     fi
 
-    # Run options
-    if [ -n "${PRINT}" ]; then
-        print_volume "${CONTROL[@]}"
-    elif [ -n "${SET}" ]; then
-        set_volume "${SET}" "${CONTROL[@]}"
-    elif [ -n "${INCREMENT}" ]; then
-        step_volume_level ${DELTA}%+ "${CONTROL[@]}"
-    elif [ -n "${DECREMENT}" ]; then
-        step_volume_level ${DELTA}%- "${CONTROL[@]}"
-    elif [ -n "${MUTE}" ]; then
-        mute_volume "${CONTROL[@]}"
-    elif [ -n "${LIST}" ]; then
-        list_volume_controls
-    elif [ -n "${STATUS}" ]; then
-        print_volume_status "${CONTROL[@]}"
+    local help=$(cli_get "help")
+    local control=$(cli_get "control")
+    local decrement=$(cli_get "decrement")
+    local increment=$(cli_get "increment")
+    local list=$(cli_get "list")
+    local mute=$(cli_get "mute")
+    local setvalue=$(cli_get "set")
+    local average=$(cli_get "average")
+    local delta=$(cli_get "delta")
+    local status=$(cli_get "status")
+
+    if [ -z "${control}" ]
+    then
+        control="Master"
+    fi
+    if [ -z "${delta}" ]
+    then
+        delta=5
+    fi
+
+    AVERAGE=
+    DELTA=5
+
+    if [ -n "${help}" ]
+    then
+        usage
+    elif [ -n "${set}" ]
+    then
+        volume_set
+    elif [ -n "${increment}" ]
+    then
+        volume_increment
+    elif [ -n "${decrement}" ]
+    then
+        volume_decrement
+    elif [ -n "${list}" ]
+    then
+        volume_list_controls
+    elif [ -n "${mute}" ]
+    then
+        volume_mute_toggle
+    elif [ -n "${status}" ]
+    then
+        volume_mute_status
     else
         :
     fi
+    exit $?
 }
 
-# ******************************************************************************
-# Print program usage
-usage()
-{
-    echo "Usage: ${PROG} [options] [value]"
-    echo
-    echo "Options:"
-    echo "    -h, --help"
-    echo "        Print program usage."
-    echo
-    echo "    -v, --verbose"
-    echo "        Verbose output."
-    echo
-    echo "    -c, --control <control>"
-    echo "        Specify a control to act on."
-    echo
-    echo "    -p, --print"
-    echo "        Print the volume level of the specified control, or the"
-    echo "        Master control, if unspecified. See '-c' for more info."
-    echo
-    echo "    -s, --set <value>"
-    echo "        Set the volume level of the specified control, or the"
-    echo "        Master control, if unspecified. Allowed values: [0 - 100]."
-    echo "         See '-c' for more info."
-    echo
-    echo "    -i, --inc"
-    echo "        Increment the volume level of the specified control, or the"
-    echo "        Master control, if unspecified, by 5%. See '-c' for more info."
-    echo
-    echo "    -d, --dec"
-    echo "        Decrement the volume level of the specified control, or the"
-    echo "        Master control, if unspecified, by 5%. See '-c' for more info."
-    echo
-    echo "    -m, --mute"
-    echo "        Toggle mute for the specified control, or the Master control,"
-    echo "        if unspecified. See '-c' for more info."
-    echo
-    echo "    -l, --list"
-    echo "        List all (useful) volume controls."
-    echo
-    echo "    -d, --delta <delta>"
-    echo "        Set the delta value when incrementing or decrementing volume."
-    echo
-    echo "    -A, --average"
-    echo "        Print the average volume level of the specified control, or"
-    echo "        the Master control, if unspecified. See '-c' for more info."
-    echo
-    echo "    -S, --status"
-    echo "        Print the mute status of the specified control, or the Master"
-    echo "        control, if unspecified. See '-c' for more info."
-    echo
-    echo "Arguments:"
-    echo "    <control>"
-    echo "        The name of a volume control."
-    echo
-    echo "    <delta>"
-    echo "        Value to increase/decrease volume by."
-    echo
-    echo "    <value>"
-    echo "        An integer number from [0 - 100]."
-}
-
-# ******************************************************************************
-# Print volume for specified volume channel(s)
-print_volume()
-{
-    local controls=("${@}")
-
-    for c in "${controls[@]}"; do
-        print_control_volume "${c}"
-    done
-}
-
-# ******************************************************************************
-# Print control volume
-print_control_volume()
+##
+# Print the current volume level.
+##
+volume_print()
 {
     local control="${1}"
+    local average="${2}"
     local channel=
-    local volume=
-    local status=
-    local i=
+    local IFS=$'\n'
 
-    if [ -n "${AVERAGE}" ]; then
-        volume="$(get_average_volume "${control}")"
-        status="$(get_average_mute "${control}")"
-        echo "${control}: ${volume}% [${status}]"
-        return
-    fi
+    # if [ -n "${average}" ]
+    # then
+    #     volume=$(get_average_volume "${control}")
+    #     status=$(get_average_mute "${control}")
+    #     echo "${control}: ${volume}% [${status}]"
+    #     return
+    # fi
 
-    channel=($(get_channel "${control}"))
-    volume=($(get_channel_volume "${control}"))
-    status=($(get_channel_status "${control}"))
-
-    for (( i=0; i<${#channel[@]}; i++ )); do
-        echo "${control}: ${volume[${i}]}% (${channel[${i}]}) [${status[${i}]}]"
+    for channel in $(volume_channel_get_list "${control}")
+    do
+        local volume=$(volume_channel_get_volume "${control}" "${channel}")
+        local mute=$(volume_channel_get_mute_status "${control}" "${channel}")
+        echo "${control}: ${volume}% (${channel}) [${mute}]"
     done
 }
 
@@ -339,7 +202,7 @@ print_volume_status()
     local status=
     for c in "${controls[@]}"; do
         status=off
-        for s in $(get_channel_status "${c}"); do
+        for s in $(volume_channel_get_mute_status "${c}"); do
             if [ "${s}" == "on" ]; then
                 status="${s}"
                 break
@@ -347,20 +210,6 @@ print_volume_status()
         done
         echo "${c}: ${status}"
     done
-}
-
-# ******************************************************************************
-# Setup default channels
-setup_default_controls()
-{
-    local i=0
-    for c in "${DEFAULTCONTROLS[@]}"; do
-        if ! is_control "${c}"; then
-            unset CONTROLS[${i}]
-        fi
-        i=$[ ${i} + 1 ]
-    done
-    DEFAULTCONTROLS=(${DEFAULTCONTROLS[@]})
 }
 
 # ******************************************************************************
@@ -372,7 +221,7 @@ get_average_volume()
     # Calculate average volume
     sum=0
     num=0
-    for val in $(get_channel_volume "${control}"); do
+    for val in $(volume_channel_get_volume "${control}"); do
         sum=$[ ${sum} + ${val} ]
         num=$[ ${num} + 1 ]
     done
@@ -391,7 +240,7 @@ get_average_mute()
     local control="${1}"
 
     # Calculate average volume
-    for status in $(get_channel_status "${control}"); do
+    for status in $(volume_channel_get_mute_status "${control}"); do
         case "${status}" in
             on)
                 echo on
@@ -426,45 +275,49 @@ get_control()
     esac
 }
 
-# ******************************************************************************
-# Return playback channel(s)
-get_channel()
-{
-    amixer get "${1}" \
-        | grep --color=never 'Playback channels' \
-        | sed -e 's/^.*.: //' -e 's/Front Left/Front-Left/' \
-        -e 's/Front Right/Front-Right/' -e 's/ - /\n/'
-}
-
-# ******************************************************************************
-# Return channel volume
-get_channel_volume()
+##
+# Return playback channel.
+##
+volume_channel_get_list()
 {
     local control="${1}"
-    local line=
-    for c in $(get_channel "${control}"); do
-        c=$(echo "${c}" | tr '-' ' ')
-        line=$(amixer get "${control}" | grep "${c}:")
-        volume=$(echo "${line}" | cut -f2 -d'[' | cut -f1 -d'%')
-        echo "${volume}"
-    done
+    amixer get "${control}" | grep 'Playback channels' \
+        | sed -e 's/^.*.: //' -e 's/ - /\n/'
+    return $?
 }
 
-# ******************************************************************************
-# Return playback channel status
-get_channel_status()
+##
+# Return channel information.
+##
+volume_channel_get_info()
 {
     local control="${1}"
-    local line=
-    for c in $(get_channel "${control}"); do
-        c=$(echo "${c}" | tr '-' ' ')
-        line=$(amixer get "${control}" | grep "${c}:")
-        status=$(echo "${line}" \
-                    | grep -m 1 -o '\[off\]\|\[on\]' \
-                    | tr -d '[' \
-                    | tr -d ']')
-        echo "${status}"
-    done
+    local channel="${2}"
+    amixer get "${control}" | grep "${channel}:"
+    return $?
+}
+
+##
+# Return channel volume.
+##
+volume_channel_get_volume()
+{
+    local control="${1}"
+    local channel="${2}"
+    volume_channel_get_info  "${control}" "${channel}" \
+        | sed 's/.*\[\(.*\)%\].*/\1/'
+    return $?
+}
+
+##
+# Return playback channel status.
+##
+volume_channel_get_mute_status()
+{
+    local control="${1}"
+    local channel="${2}"
+    volume_channel_get_info "${control}" "${channel}" \
+        | sed 's/.*\[\(.*\)\]/\1/'
 }
 
 # ******************************************************************************
