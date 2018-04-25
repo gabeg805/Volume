@@ -27,6 +27,7 @@ VERBOSE=
 ##
 # Exit statuses.
 ##
+EXIT_VOLUME_INVALID_VALUE=10
 STATUS_NORMAL=0
 STATUS_GETOPT=1
 STATUS_ARGS=2
@@ -41,14 +42,13 @@ main()
 {
     cli_options "-h|--help|Print program usage." \
                 "-v|--verbose|Verbose output." \
-                "-c|--control=control:|A volume control to act on." \
+                "-c|--control=control:|A volume control to act on. [Default: Master]." \
                 "-d|--decrement|Decrement the volume level by the amount set by '-D'." \
                 "-i|--increment|Increment the volume level by the amount set by '-D'." \
                 "-l|--list|List all the volume controls." \
                 "-m|--mute|Toggle mute." \
                 "-s|--set=value:|Set the volume to the desired level. [Range: 0 - 100]." \
-                "-A|--average|Print the average volume level." \
-                "-D|--delta=value:|Set the amount to increment/decrement the volume. [Default: 5]" \
+                "-D|--delta=value:|Set the amount to increment/decrement the volume. [Default: 5]." \
                 "-S|--status|Print the mute status."
     if [ $# -eq 0 ]
     then
@@ -65,7 +65,6 @@ main()
     local list=$(cli_get "list")
     local mute=$(cli_get "mute")
     local setvalue=$(cli_get "set")
-    local average=$(cli_get "average")
     local delta=$(cli_get "delta")
     local status=$(cli_get "status")
 
@@ -78,21 +77,18 @@ main()
         delta=5
     fi
 
-    AVERAGE=
-    DELTA=5
-
     if [ -n "${help}" ]
     then
-        usage
-    elif [ -n "${set}" ]
+        cli_usage
+    elif [ -n "${setvalue}" ]
     then
-        volume_set
+        volume_set "${control}" "${setvalue}"
     elif [ -n "${increment}" ]
     then
-        volume_increment
+        volume_increment "${control}" "${delta}"
     elif [ -n "${decrement}" ]
     then
-        volume_decrement
+        volume_decrement "${control}" "${delta}"
     elif [ -n "${list}" ]
     then
         volume_list_controls
@@ -114,62 +110,77 @@ main()
 volume_print()
 {
     local control="${1}"
-    local average="${2}"
-    local channel=
-    local IFS=$'\n'
-
-    # if [ -n "${average}" ]
-    # then
-    #     volume=$(get_average_volume "${control}")
-    #     status=$(get_average_mute "${control}")
-    #     echo "${control}: ${volume}% [${status}]"
-    #     return
-    # fi
-
-    for channel in $(volume_channel_get_list "${control}")
-    do
-        local volume=$(volume_channel_get_volume "${control}" "${channel}")
-        local mute=$(volume_channel_get_mute_status "${control}" "${channel}")
-        echo "${control}: ${volume}% (${channel}) [${mute}]"
-    done
+    local value="${2}"
+    local volume=0
+    local mute=$(volume_get_mute_status "${control}")
+    if [ -n "${value}" ]
+    then
+        volume="${value}"
+    else
+        volume=$(volume_get_volume "${control}")
+    fi
+    if [ "${status}" == "off" ]
+    then
+        echo "${control} Volume: ${volume}%"
+    else
+        echo "${control} Volume: ${volume}% (Muted)"
+    fi
 }
 
-# ******************************************************************************
-# Set system volume
-set_volume()
+##
+# Set the volume level.
+##
+volume_set()
 {
-    local value="${1}"
-    shift
-    local controls=("${@}")
-
-    # Verify integer value was inputted
-    if ! is_integer "${value}"; then
-        print_err "Unable to set volume: Input value is not an integer."
-        exit ${STATUS_SETVAL}
-    fi
-    if [ ${value} -lt 0 -o ${value} -gt 100 ]; then
-        print_err "Unable to set volume: Value must be between 0-100."
-        exit ${STATUS_SETVAL}
-    fi
-
-    # Set volume
-    for c in "${controls[@]}"; do
-        amixer -q sset "${c}" "${value}%"
-        print_control_volume "${c}"
-    done
+    local control="${1}"
+    local value="${2/\%/}"
+    local status=0
+    volume_set_verify_value "${value}" || return $?
+    amixer -q sset "${control}" "${value}%"
+    status=$?
+    volume_print "${control}" "${value}"
+    return ${status}
 }
 
-# ******************************************************************************
-# Increment/decrement volume level
-step_volume_level()
+##
+# Increment the volume level.
+##
+volume_increment()
 {
-    local step="${1}"
-    shift
-    local controls=("${@}")
-    for c in "${controls[@]}"; do
-        amixer -q set "${c}" "${step}"
-        print_control_volume "${c}"
-    done
+    local control="${1}"
+    local delta="${2}"
+    volume_delta "increment" "${control}" "${delta}"
+    return $?
+}
+
+##
+# Decrement the volume level.
+##
+volume_decrement()
+{
+    local control="${1}"
+    local delta="${2}"
+    volume_delta "decrement" "${control}" "${delta}"
+    return $?
+}
+
+##
+# Change the volume level by some delta amount.
+##
+volume_delta()
+{
+    local type="${1}"
+    local control="${2}"
+    local delta="${3}"
+    local volume=$(volume_get_volume_normalized "${control}" "${delta}")
+    volume_increment_verify_delta "${delta}" || return $?
+    case "${type}" in
+        increment) volume=$[ ${volume} + ${delta} ] ;;
+        decrement) volume=$[ ${volume} - ${delta} ] ;;
+        *) return 1 ;;
+    esac
+    volume_set "${control}" "${volume}"
+    return $?
 }
 
 # ******************************************************************************
@@ -320,6 +331,99 @@ volume_channel_get_mute_status()
         | sed 's/.*\[\(.*\)\]/\1/'
 }
 
+##
+# Return the current volume level.
+##
+volume_get_volume()
+{
+    local IFS=$'\n'
+    local control="${1}"
+    local channels=($(volume_channel_get_list "${control}"))
+    local volume=0
+    local n=${#channels[@]}
+    local c=
+    for c in "${channels[@]}"
+    do
+        volume=$[ ${volume} + $(volume_channel_get_volume "${control}" "${c}") ]
+    done
+    if [ ${n} -eq 0 ]
+    then
+        echo 0
+        return 1
+    else
+        echo $[ ${volume} / ${n} ]
+        return 0
+    fi
+}
+
+##
+# Return the current normalized volume level, based on the delta volume.
+##
+volume_get_volume_normalized()
+{
+    local control="${1}"
+    local delta="${2}"
+    local volume=$(volume_get_volume "${control}")
+    volume_increment_verify_delta "${delta}" || return $?
+    echo $[ ${volume} - (${volume} % ${delta}) ]
+    return 0
+}
+
+##
+# Return the current mute status.
+##
+volume_get_mute_status()
+{
+    local IFS=$'\n'
+    local control="${1}"
+    local channels=($(volume_channel_get_list "${control}"))
+    local mute="off"
+    local c=
+    for c in "${channels[@]}"
+    do
+        mute=$(volume_channel_get_mute_status "${control}" "${c}")
+        if [ "${mute}" == "on" ]
+        then
+            break
+        fi
+    done
+    echo "${mute}"
+    return 0
+}
+
+##
+# Verify input value when setting volume.
+##
+volume_set_verify_value()
+{
+    local value="${1}"
+    if ! is_integer "${value}"
+    then
+        print_err "Unable to set volume: Input value is not an integer."
+        return ${EXIT_VOLUME_INVALID_VALUE}
+    fi
+    if [ ${value} -lt 0 -o ${value} -gt 100 ]
+    then
+        print_err "Unable to set volume: Value must be between 0-100."
+        return ${EXIT_VOLUME_INVALID_VALUE}
+    fi
+    return 0
+}
+
+##
+# Verify input delta when incrementing the volume.
+##
+volume_increment_verify_delta()
+{
+    local delta="${1}"
+    if ! is_integer "${delta}"
+    then
+        print_err "Unable to increment volume: Input delta is not an integer."
+        return ${EXIT_VOLUME_INVALID_DELTA}
+    fi
+    return 0
+}
+
 # ******************************************************************************
 # Check if control exists
 is_control()
@@ -336,96 +440,7 @@ is_control()
     return 0
 }
 
-# ******************************************************************************
-# Check if mulitple arguments were used when they should not have
-check_multi_arg()
-{
-    case "${1}" in
-        PRINT)
-            if [ -n "${SET}" -o -n "${INCREMENT}" -o -n "${DECREMENT}" \
-                -o -n "${MUTE}" -o -n "${LIST}" -o -n "${AVERAGE}" \
-                -o -n "${STATUS}" ]
-            then
-                print_err "Unable to print volume level: Must specify only one option."
-                exit ${STATUS_ARGS}
-            fi
-            ;;
-
-        SET)
-            if [ -n "${PRINT}" -o -n "${INCREMENT}" -o -n "${DECREMENT}" \
-                -o -n "${MUTE}" -o -n "${LIST}" -o -n "${AVERAGE}" \
-                -o -n "${STATUS}" ]
-            then
-                print_err "Unable to set volume level: Must specify only one option."
-                exit ${STATUS_ARGS}
-            fi
-            ;;
-
-        INCREMENT)
-            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${DECREMENT}" \
-                -o -n "${MUTE}" -o -n "${LIST}" -o -n "${AVERAGE}" \
-                -o -n "${STATUS}" ]
-            then
-                print_err "Unable to increment volume level: Must specify only one option."
-                exit ${STATUS_ARGS}
-            fi
-            ;;
-
-        DECREMENT)
-            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${INCREMENT}" \
-                -o -n "${DECREMENT}" -o -n "${MUTE}" -o -n "${LIST}" \
-                -o -n "${AVERAGE}" -o -n "${STATUS}" ]
-            then
-                print_err "Unable to decrement volume level: Must specify only one option."
-                exit ${STATUS_ARGS}
-            fi
-            ;;
-
-        MUTE)
-            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${INCREMENT}" \
-                -o -n "${DECREMENT}" -o -n "${LIST}" -o -n "${AVERAGE}" \
-                -o -n "${STATUS}" ]
-            then
-                print_err "Unable to toggle mute: Must specify only one option."
-                exit ${STATUS_ARGS}
-            fi
-            ;;
-
-        LIST)
-            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${INCREMENT}" \
-                -o -n "${DECREMENT}" -o -n "${MUTE}" -o -n "${AVERAGE}" \
-                -o -n "${STATUS}" ]
-            then
-                print_err "Unable to list volume channels: Must specify only one option."
-                exit ${STATUS_ARGS}
-            fi
-            ;;
-
-        AVERAGE)
-            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${INCREMENT}" \
-                -o -n "${DECREMENT}" -o -n "${MUTE}" -o -n "${LIST}" \
-                -o -n "${STATUS}" ]
-            then
-                print_err "Unable to print average volume: Must specify only one option."
-                exit ${STATUS_ARGS}
-            fi
-            ;;
-
-        STATUS)
-            if [ -n "${PRINT}" -o -n "${SET}" -o -n "${INCREMENT}" \
-                -o -n "${DECREMENT}" -o -n "${MUTE}" -o -n "${LIST}" \
-                -o -n "${AVERAGE}" ]
-            then
-                print_err "Unable to print volume status: Must specify only one option."
-                exit ${STATUS_ARGS}
-            fi
-            ;;
-
-        *)
-            ;;
-    esac
-}
-
-# ******************************************************************************
-# Run script
+##
+# Run script.
+##
 main "${@}"
