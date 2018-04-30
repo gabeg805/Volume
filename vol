@@ -143,17 +143,6 @@ volume_set()
 }
 
 ##
-# Increment the volume level.
-##
-volume_increment()
-{
-    local control="${1}"
-    local delta="${2}"
-    volume_delta "increment" "${control}" "${delta}"
-    return $?
-}
-
-##
 # Decrement the volume level.
 ##
 volume_decrement()
@@ -161,6 +150,17 @@ volume_decrement()
     local control="${1}"
     local delta="${2}"
     volume_delta "decrement" "${control}" "${delta}"
+    return $?
+}
+
+##
+# Increment the volume level.
+##
+volume_increment()
+{
+    local control="${1}"
+    local delta="${2}"
+    volume_delta "increment" "${control}" "${delta}"
     return $?
 }
 
@@ -183,31 +183,30 @@ volume_delta()
     return $?
 }
 
-# ******************************************************************************
-# Mute specified volume channel(s)
-mute_volume()
+##
+# List all the available volume controls.
+##
+volume_list_controls()
 {
-    local channels=("${@}")
-    for c in "${channels[@]}"; do
-        amixer -q set "${c}" toggle 
-        print_control_volume "${c}"
-    done
+    amixer | grep -o "^Simple mixer control '.*'" \
+        | sed "s/^Simple mixer control '//; s/'//"
+    return $?
 }
 
-# ******************************************************************************
-# List volume channels
-list_volume_controls()
+##
+# Toggle mute.
+##
+volume_mute_toggle()
 {
-    local first=true
-    echo "Channels:"
-    for c in "${DEFAULTCONTROLS[@]}"; do
-        echo "* ${c}"
-    done
+    local control="${1}"
+    amixer -q set "${control}" toggle 
+    volume_print "${control}"
 }
 
-# ******************************************************************************
-# Print volume status
-print_volume_status()
+##
+# Volume mute status.
+##
+volume_mute_status()
 {
     local controls=("${@}")
     local status=
@@ -223,67 +222,42 @@ print_volume_status()
     done
 }
 
-# ******************************************************************************
-# Return average volume
-get_average_volume()
+##
+# Return the current volume level.
+##
+volume_get_volume()
 {
+    local IFS=$'\n'
     local control="${1}"
-
-    # Calculate average volume
-    sum=0
-    num=0
-    for val in $(volume_channel_get_volume "${control}"); do
-        sum=$[ ${sum} + ${val} ]
-        num=$[ ${num} + 1 ]
+    local channels=($(volume_channel_get_list "${control}"))
+    local volume=0
+    local n=${#channels[@]}
+    local c=
+    for c in "${channels[@]}"
+    do
+        volume=$[ ${volume} + $(volume_channel_get_volume "${control}" "${c}") ]
     done
-
-    if [ ${num} -eq 0 ]; then
+    if [ ${n} -eq 0 ]
+    then
         echo 0
+        return 1
     else
-        echo "$[ ${sum} / ${num} ]"
+        echo $[ ${volume} / ${n} ]
+        return 0
     fi
 }
 
-# ******************************************************************************
-# Return average mute status
-get_average_mute()
+##
+# Return the current normalized volume level, based on the delta volume.
+##
+volume_get_volume_normalized()
 {
     local control="${1}"
-
-    # Calculate average volume
-    for status in $(volume_channel_get_mute_status "${control}"); do
-        case "${status}" in
-            on)
-                echo on
-                return
-                ;;
-
-            *) ;;
-        esac
-    done
-
-    echo off
-}
-
-# ******************************************************************************
-# Return specified channel(s)
-get_control()
-{
-    local channel="${1}"
-
-    # Determine which channel(s) to return
-    case "${channel}" in
-        all) echo "${DEFAULTCONTROLS[@]}" ;;
-        *)
-            channel=$(str_to_capital "${channel}")
-            if is_control "${channel}"; then
-                echo "${channel}"
-            else
-                print_err "Invalid channel specified."
-                exit ${STATUS_CONTROL}
-            fi
-            ;;
-    esac
+    local delta="${2}"
+    local volume=$(volume_get_volume "${control}")
+    volume_increment_verify_delta "${delta}" || return $?
+    echo $[ ${volume} - (${volume} % ${delta}) ]
+    return 0
 }
 
 ##
@@ -329,44 +303,6 @@ volume_channel_get_mute_status()
     local channel="${2}"
     volume_channel_get_info "${control}" "${channel}" \
         | sed 's/.*\[\(.*\)\]/\1/'
-}
-
-##
-# Return the current volume level.
-##
-volume_get_volume()
-{
-    local IFS=$'\n'
-    local control="${1}"
-    local channels=($(volume_channel_get_list "${control}"))
-    local volume=0
-    local n=${#channels[@]}
-    local c=
-    for c in "${channels[@]}"
-    do
-        volume=$[ ${volume} + $(volume_channel_get_volume "${control}" "${c}") ]
-    done
-    if [ ${n} -eq 0 ]
-    then
-        echo 0
-        return 1
-    else
-        echo $[ ${volume} / ${n} ]
-        return 0
-    fi
-}
-
-##
-# Return the current normalized volume level, based on the delta volume.
-##
-volume_get_volume_normalized()
-{
-    local control="${1}"
-    local delta="${2}"
-    local volume=$(volume_get_volume "${control}")
-    volume_increment_verify_delta "${delta}" || return $?
-    echo $[ ${volume} - (${volume} % ${delta}) ]
-    return 0
 }
 
 ##
