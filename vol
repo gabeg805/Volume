@@ -119,11 +119,11 @@ volume_print()
     else
         volume=$(volume_get_volume "${control}")
     fi
-    if [ "${status}" == "on" ]
+    if [ "${status}" == "off" ]
     then
-        echo "${control}: ${volume}%"
+        echo "Volume: ${volume}%"
     else
-        echo "${control}: ${volume}% (Muted)"
+        echo "Volume: ${volume}% (Muted)"
     fi
 }
 
@@ -210,12 +210,7 @@ volume_mute_status()
 {
     local control="${1}"
     local status=$(volume_get_mute_status "${control}")
-    if [ "${status}" == "on" ]
-    then
-        echo "${control}: Not Muted"
-    else
-        echo "${control}: Muted"
-    fi
+    echo "Mute: ${status}"
 }
 
 ##
@@ -309,13 +304,16 @@ volume_get_mute_status()
     local IFS=$'\n'
     local control="${1}"
     local channels=($(volume_channel_get_list "${control}"))
-    local status="on"
+    local status="off"
     local c=
     for c in "${channels[@]}"
     do
         status=$(volume_channel_get_mute_status "${control}" "${c}")
-        if [ "${status}" == "off" ]
+        if [ "${status}" == "on" ]
         then
+            status="off"
+        else
+            status="on"
             break
         fi
     done
