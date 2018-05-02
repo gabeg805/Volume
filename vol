@@ -94,10 +94,10 @@ main()
         volume_list_controls
     elif [ -n "${mute}" ]
     then
-        volume_mute_toggle
+        volume_mute_toggle "${control}"
     elif [ -n "${status}" ]
     then
-        volume_mute_status
+        volume_mute_status "${control}"
     else
         :
     fi
@@ -112,18 +112,18 @@ volume_print()
     local control="${1}"
     local value="${2}"
     local volume=0
-    local mute=$(volume_get_mute_status "${control}")
+    local status=$(volume_get_mute_status "${control}")
     if [ -n "${value}" ]
     then
         volume="${value}"
     else
         volume=$(volume_get_volume "${control}")
     fi
-    if [ "${status}" == "off" ]
+    if [ "${status}" == "on" ]
     then
-        echo "${control} Volume: ${volume}%"
+        echo "${control}: ${volume}%"
     else
-        echo "${control} Volume: ${volume}% (Muted)"
+        echo "${control}: ${volume}% (Muted)"
     fi
 }
 
@@ -208,18 +208,14 @@ volume_mute_toggle()
 ##
 volume_mute_status()
 {
-    local controls=("${@}")
-    local status=
-    for c in "${controls[@]}"; do
-        status=off
-        for s in $(volume_channel_get_mute_status "${c}"); do
-            if [ "${s}" == "on" ]; then
-                status="${s}"
-                break
-            fi
-        done
-        echo "${c}: ${status}"
-    done
+    local control="${1}"
+    local status=$(volume_get_mute_status "${control}")
+    if [ "${status}" == "on" ]
+    then
+        echo "${control}: Not Muted"
+    else
+        echo "${control}: Muted"
+    fi
 }
 
 ##
@@ -313,17 +309,17 @@ volume_get_mute_status()
     local IFS=$'\n'
     local control="${1}"
     local channels=($(volume_channel_get_list "${control}"))
-    local mute="off"
+    local status="on"
     local c=
     for c in "${channels[@]}"
     do
-        mute=$(volume_channel_get_mute_status "${control}" "${c}")
-        if [ "${mute}" == "on" ]
+        status=$(volume_channel_get_mute_status "${control}" "${c}")
+        if [ "${status}" == "off" ]
         then
             break
         fi
     done
-    echo "${mute}"
+    echo "${status}"
     return 0
 }
 
@@ -356,22 +352,6 @@ volume_increment_verify_delta()
     then
         print_err "Unable to increment volume: Input delta is not an integer."
         return ${EXIT_VOLUME_INVALID_DELTA}
-    fi
-    return 0
-}
-
-# ******************************************************************************
-# Check if control exists
-is_control()
-{
-    local channel="${1}"
-    if [ -z "${channel}" ]; then
-        return 1
-    fi
-
-    local exists=$(amixer | grep "control" | grep "${channel}")
-    if [ -z "${exists}" ]; then
-        return 1
     fi
     return 0
 }
