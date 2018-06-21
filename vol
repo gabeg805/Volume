@@ -11,97 +11,175 @@
 ##
 # Source utilities.
 ##
-. "commandline.sh"
+# . "commandline.sh"
 . "io.sh"
-
-# Globals
-PROG="${0##*/}"
-PROGDIR=$(dirname "$(readlink -f "${0}")")
-DEFAULTCONTROLS=("Master" "Headphone" "Speaker")
 
 ##
 # Options.
 ##
 VERBOSE=
+HELP=
+VERBOSE=
+CONTROL="Master"
+DECREMENT=
+INCREMENT=
+LIST=
+MUTE=
+SET=
+DELTA=5
+STATUS=
 
 ##
 # Exit statuses.
 ##
-EXIT_VOLUME_INVALID_VALUE=10
-STATUS_NORMAL=0
-STATUS_GETOPT=1
-STATUS_ARGS=2
-STATUS_CONTROL=10
-STATUS_SETVAL=11
-
+EXIT_NO_OPT_ENTERED=10
+EXIT_VOLUME_INVALID_CONTROL=11
+EXIT_VOLUME_INVALID_VALUE=12
 
 ##
 # Control volume.
 ##
 main()
 {
-    cli_options "-h|--help|Print program usage." \
-                "-v|--verbose|Verbose output." \
-                "-c|--control=control:|A volume control to act on. [Default: Master]." \
-                "-d|--decrement|Decrement the volume level by the amount set by '-D'." \
-                "-i|--increment|Increment the volume level by the amount set by '-D'." \
-                "-l|--list|List all the volume controls." \
-                "-m|--mute|Toggle mute." \
-                "-s|--set=value:|Set the volume to the desired level. [Range: 0 - 100]." \
-                "-D|--delta=value:|Set the amount to increment/decrement the volume. [Default: 5]." \
-                "-S|--status|Print the mute status."
+    local short="hvc:dilms:D:S"
+    local long="help,verbose,control:,decrement,increment,list,mute,set:,delta:,status"
     if [ $# -eq 0 ]
     then
         volume_print "Master"
         exit $?
-    else
-        cli_parse "${@}"
     fi
 
-    local help=$(cli_get "help")
-    local control=$(cli_get "control")
-    local decrement=$(cli_get "decrement")
-    local increment=$(cli_get "increment")
-    local list=$(cli_get "list")
-    local mute=$(cli_get "mute")
-    local setvalue=$(cli_get "set")
-    local delta=$(cli_get "delta")
-    local status=$(cli_get "status")
+    # Parse options
+    cli_parse "${PROJECT}" "${short}" "${long}" "${@}"
+    while true
+    do
+        case "${1}" in
+            -h|--help)
+                usage
+                exit 0
+                ;;
 
-    if [ -z "${control}" ]
+            -v|--verbose)
+                VERBOSE=true
+                ;;
+
+            -c|--control)
+                shift
+                CONTROL="${1}"
+                ;;
+
+            -d|--decrement)
+                DECREMENT=true
+                ;;
+
+            -i|--increment)
+                INCREMENT=true
+                ;;
+
+            -l|--list)
+                LIST=true
+                ;;
+
+            -m|--mute)
+                MUTE=true
+                ;;
+
+            -s|--set)
+                shift
+                SET="${1}"
+                ;;
+
+            -D|--delta)
+                shift
+                DELTA="${1}"
+                ;;
+
+            -S|--status)
+                STATUS=true
+                ;;
+
+            --)
+                break
+                ;;
+
+            *)
+                break
+                ;;
+        esac
+        shift
+    done
+
+    # Run checks
+    if ! volume_is_control "${CONTROL}"
     then
-        control="Master"
-    fi
-    if [ -z "${delta}" ]
-    then
-        delta=5
+        print_err "Invalid control '${CONTROL}'."
+        exit ${EXIT_VOLUME_INVALID_CONTROL}
     fi
 
-    if [ -n "${help}" ]
+    # Run options
+    if [ -n "${DECREMENT}" ]
     then
-        cli_usage
-    elif [ -n "${setvalue}" ]
+        volume_decrement "${CONTROL}" "${DELTA}"
+    elif [ -n "${INCREMENT}" ]
     then
-        volume_set "${control}" "${setvalue}"
-    elif [ -n "${increment}" ]
-    then
-        volume_increment "${control}" "${delta}"
-    elif [ -n "${decrement}" ]
-    then
-        volume_decrement "${control}" "${delta}"
-    elif [ -n "${list}" ]
+        volume_increment "${CONTROL}" "${DELTA}"
+    elif [ -n "${LIST}" ]
     then
         volume_list_controls
-    elif [ -n "${mute}" ]
+    elif [ -n "${MUTE}" ]
     then
-        volume_mute_toggle "${control}"
-    elif [ -n "${status}" ]
+        volume_mute_toggle "${CONTROL}"
+    elif [ -n "${SET}" ]
     then
-        volume_mute_status "${control}"
+        volume_set "${CONTROL}" "${SET}"
+    elif [ -n "${STATUS}" ]
+    then
+        volume_mute_status "${CONTROL}"
     else
-        :
+        usage
+        exit ${EXIT_NO_OPT_ENTERED}
     fi
+
     exit $?
+}
+
+##
+# Print program usage.
+##
+usage()
+{
+    echo "Usage: ${PROJECT} [options]"
+    echo 
+    echo "Options:"
+    echo "    -h, --help"
+    echo "        Print program usage."
+    echo 
+    echo "    -v, --verbose"
+    echo "        Verbose output."
+    echo 
+    echo "    -c, --control"
+    echo "        A volume control to act on. [Default: Master]."
+    echo 
+    echo "    -d, --decrement"
+    echo "        Decrement the volume level by the amount set by '-D'."
+    echo 
+    echo "    -i, --increment"
+    echo "        Increment the volume level by the amount set by '-D'."
+    echo 
+    echo "    -l, --list"
+    echo "        List all the volume controls."
+    echo 
+    echo "    -m, --mute"
+    echo "        Toggle mute."
+    echo 
+    echo "    -s, --set"
+    echo "        Set the volume to the desired level. [Range: 0 - 100]."
+    echo 
+    echo "    -D, --delta"
+    echo "        Set the amount to increment/decrement the volume. [Default: 5]."
+    echo 
+    echo "    -S, --status"
+    echo "        Print the mute status"
 }
 
 ##
@@ -352,6 +430,23 @@ volume_increment_verify_delta()
         return ${EXIT_VOLUME_INVALID_DELTA}
     fi
     return 0
+}
+
+##
+# Check if input is a valid control.
+##
+volume_is_control()
+{
+    local control="${1}"
+    local valid=("Master" "Headphone" "Speaker")
+    for v in "${valid[@]}"
+    do
+        if [ "${control}" == "${v}" ]
+        then
+            return 0
+        fi
+    done
+    return 1
 }
 
 ##
