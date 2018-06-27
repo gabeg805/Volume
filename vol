@@ -4,22 +4,18 @@
 # File: vol
 # Author: Gabriel Gonzalez
 # 
-# Brief: Control and display the system volume.
+# Brief: Control and print the system volume.
 # 
 # ------------------------------------------------------------------------------
 
 ##
-# Source utilities.
+# Program name.
 ##
-# . "commandline.sh"
-. "io.sh"
+PROJECT="${0##*/}"
 
 ##
 # Options.
 ##
-VERBOSE=
-HELP=
-VERBOSE=
 CONTROL="Master"
 DECREMENT=
 INCREMENT=
@@ -41,8 +37,6 @@ EXIT_VOLUME_INVALID_VALUE=12
 ##
 main()
 {
-    local short="hvc:dilms:D:S"
-    local long="help,verbose,control:,decrement,increment,list,mute,set:,delta:,status"
     if [ $# -eq 0 ]
     then
         volume_print "Master"
@@ -50,7 +44,17 @@ main()
     fi
 
     # Parse options
-    cli_parse "${PROJECT}" "${short}" "${long}" "${@}"
+    local short="hc:dils:D:mS"
+    local long="help,control:,decrement,increment,list,set:,delta:,mute,status"
+    local args=$(getopt -o "${short}" --long "${long}" --name "${PROJECT}" \
+                        -- "${@}")
+    if [ $? -ne 0 ]
+    then
+        usage
+        exit 1
+    fi
+    eval set -- "${args}"
+
     while true
     do
         case "${1}" in
@@ -58,50 +62,33 @@ main()
                 usage
                 exit 0
                 ;;
-
-            -v|--verbose)
-                VERBOSE=true
-                ;;
-
             -c|--control)
                 shift
                 CONTROL="${1}"
                 ;;
-
             -d|--decrement)
                 DECREMENT=true
                 ;;
-
             -i|--increment)
                 INCREMENT=true
                 ;;
-
             -l|--list)
                 LIST=true
                 ;;
-
-            -m|--mute)
-                MUTE=true
-                ;;
-
             -s|--set)
                 shift
                 SET="${1}"
                 ;;
-
             -D|--delta)
                 shift
                 DELTA="${1}"
                 ;;
-
+            -m|--mute)
+                MUTE=true
+                ;;
             -S|--status)
                 STATUS=true
                 ;;
-
-            --)
-                break
-                ;;
-
             *)
                 break
                 ;;
@@ -112,8 +99,8 @@ main()
     # Run checks
     if ! volume_is_control "${CONTROL}"
     then
-        print_err "Invalid control '${CONTROL}'."
-        exit ${EXIT_VOLUME_INVALID_CONTROL}
+        echo "${PROJECT}: Invalid control '${CONTROL}'." 1>&2
+        return ${EXIT_VOLUME_INVALID_CONTROL}
     fi
 
     # Run options
@@ -126,21 +113,20 @@ main()
     elif [ -n "${LIST}" ]
     then
         volume_list_controls
-    elif [ -n "${MUTE}" ]
-    then
-        volume_mute_toggle "${CONTROL}"
     elif [ -n "${SET}" ]
     then
         volume_set "${CONTROL}" "${SET}"
+    elif [ -n "${MUTE}" ]
+    then
+        volume_mute_toggle "${CONTROL}"
     elif [ -n "${STATUS}" ]
     then
         volume_mute_status "${CONTROL}"
     else
-        usage
-        exit ${EXIT_NO_OPT_ENTERED}
+        volume_print "${CONTROL}"
     fi
 
-    exit $?
+    return $?
 }
 
 ##
@@ -154,10 +140,7 @@ usage()
     echo "    -h, --help"
     echo "        Print program usage."
     echo 
-    echo "    -v, --verbose"
-    echo "        Verbose output."
-    echo 
-    echo "    -c, --control"
+    echo "    -c, --control=<control>"
     echo "        A volume control to act on. [Default: Master]."
     echo 
     echo "    -d, --decrement"
@@ -169,17 +152,24 @@ usage()
     echo "    -l, --list"
     echo "        List all the volume controls."
     echo 
+    echo "    -s, --set=<value>"
+    echo "        Set the volume to the desired level. [Range: 0 - 100]."
+    echo 
+    echo "    -D, --delta=<value>"
+    echo "        Set the amount to increment/decrement the volume. [Default: 5]."
+    echo 
     echo "    -m, --mute"
     echo "        Toggle mute."
     echo 
-    echo "    -s, --set"
-    echo "        Set the volume to the desired level. [Range: 0 - 100]."
-    echo 
-    echo "    -D, --delta"
-    echo "        Set the amount to increment/decrement the volume. [Default: 5]."
-    echo 
     echo "    -S, --status"
     echo "        Print the mute status"
+    echo 
+    echo "Arguments:"
+    echo "    <control>"
+    echo "        A mixer control."
+    echo 
+    echo "    <value>"
+    echo "        An integer value."
 }
 
 ##
@@ -407,12 +397,12 @@ volume_set_verify_value()
     local value="${1}"
     if ! is_integer "${value}"
     then
-        print_err "Unable to set volume: Input value is not an integer."
+        echo "${PROJECT}: Unable to set volume: Input value is not an integer." 1>&2
         return ${EXIT_VOLUME_INVALID_VALUE}
     fi
     if [ ${value} -lt 0 -o ${value} -gt 100 ]
     then
-        print_err "Unable to set volume: Value must be between 0-100."
+        echo "${PROJECT}: Unable to set volume: Value must be between 0-100." 1>&2
         return ${EXIT_VOLUME_INVALID_VALUE}
     fi
     return 0
@@ -426,7 +416,7 @@ volume_increment_verify_delta()
     local delta="${1}"
     if ! is_integer "${delta}"
     then
-        print_err "Unable to increment volume: Input delta is not an integer."
+        echo "${PROJECT}: Unable to increment volume: Input delta is not an integer." 1>&2
         return ${EXIT_VOLUME_INVALID_DELTA}
     fi
     return 0
@@ -438,7 +428,8 @@ volume_increment_verify_delta()
 volume_is_control()
 {
     local control="${1}"
-    local valid=("Master" "Headphone" "Speaker")
+    # local valid=("Master" "Headphone" "Speaker")
+    local valid=($(volume_list_controls))
     for v in "${valid[@]}"
     do
         if [ "${control}" == "${v}" ]
