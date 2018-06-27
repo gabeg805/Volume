@@ -395,8 +395,10 @@ volume_get_mute_status()
 volume_set_verify_value()
 {
     local value="${1}"
-    if ! is_integer "${value}"
+    if [ "${value}" -eq "${value}" ] 2> /dev/null
     then
+        :
+    else
         echo "${PROJECT}: Unable to set volume: Input value is not an integer." 1>&2
         return ${EXIT_VOLUME_INVALID_VALUE}
     fi
@@ -414,8 +416,10 @@ volume_set_verify_value()
 volume_increment_verify_delta()
 {
     local delta="${1}"
-    if ! is_integer "${delta}"
+    if [ "${delta}" -eq "${delta}" ] 2> /dev/null
     then
+        :
+    else
         echo "${PROJECT}: Unable to increment volume: Input delta is not an integer." 1>&2
         return ${EXIT_VOLUME_INVALID_DELTA}
     fi
