@@ -24,6 +24,7 @@ MUTE=
 SET=
 DELTA=5
 STATUS=
+SHORT=
 
 ##
 # Exit statuses.
@@ -43,11 +44,14 @@ main()
         exit $?
     fi
 
+	# Options
+    local short="hc:dils:D:mMS"
+    local long="help,control:,decrement,increment,list,set:,delta:,mute,status,short"
+	local args=
+
     # Parse options
-    local short="hc:dils:D:mS"
-    local long="help,control:,decrement,increment,list,set:,delta:,mute,status"
-    local args=$(getopt -o "${short}" --long "${long}" --name "${PROJECT}" \
-                        -- "${@}")
+    args=$(getopt -o "${short}" --long "${long}" --name "${PROJECT}" \
+				-- "${@}")
     if [ $? -ne 0 ]
     then
         usage
@@ -86,8 +90,11 @@ main()
             -m|--mute)
                 MUTE=true
                 ;;
-            -S|--status)
+            -M|--status)
                 STATUS=true
+                ;;
+            -S|--short)
+                SHORT=true
                 ;;
             *)
                 break
@@ -161,8 +168,11 @@ usage()
     echo "    -m, --mute"
     echo "        Toggle mute."
     echo 
-    echo "    -S, --status"
-    echo "        Print the mute status"
+    echo "    -M, --status"
+    echo "        Print the mute status."
+    echo 
+    echo "    -S, --short"
+    echo "        Print the short form of the volume level."
     echo 
     echo "Arguments:"
     echo "    <control>"
@@ -181,18 +191,28 @@ volume_print()
     local value="${2}"
     local volume=0
     local status=$(volume_get_mute_status "${control}")
-    if [ -n "${value}" ]
+	local msg=
+
+	if [ -n "${value}" ]
     then
-        volume="${value}"
+        volume="${value}%"
     else
-        volume=$(volume_get_volume "${control}")
+        volume="$(volume_get_volume "${control}")%"
     fi
-    if [ "${status}" == "off" ]
+
+	if [ -z "${SHORT}" ]
+	then
+		msg="Volume: ${volume}"
+	else
+		msg="${volume}"
+	fi
+
+    if [ "${status}" != "off" ]
     then
-        echo "Volume: ${volume}%"
-    else
-        echo "Volume: ${volume}% (Muted)"
+        msg+=" (Muted)"
     fi
+
+	echo "${msg}"
 }
 
 ##
