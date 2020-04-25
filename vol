@@ -16,7 +16,7 @@ PROJECT="${0##*/}"
 ##
 # Options.
 ##
-CONTROL="Master"
+CONTROL=
 DECREMENT=
 INCREMENT=
 LIST=
@@ -25,6 +25,7 @@ SET=
 DELTA=5
 STATUS=
 SHORT=
+NOTIFY=
 
 ##
 # Exit statuses.
@@ -38,102 +39,118 @@ EXIT_VOLUME_INVALID_VALUE=12
 ##
 main()
 {
-    if [ $# -eq 0 ]
-    then
-        volume_print "Master"
-        exit $?
-    fi
+	if [ $# -eq 0 ]
+	then
+		volume_print
+		exit $?
+	fi
 
 	# Options
-    local short="hc:dils:D:mMS"
-    local long="help,control:,decrement,increment,list,set:,delta:,mute,status,short"
+	local short="hdils:D:mMSN"
+	local long="help,decrement,delta:,increment,list,,mute,notify,set:,short,status"
 	local args=
 
-    # Parse options
-    args=$(getopt -o "${short}" --long "${long}" --name "${PROJECT}" \
-				-- "${@}")
-    if [ $? -ne 0 ]
-    then
-        usage
-        exit 1
-    fi
-    eval set -- "${args}"
+	# Parse options
+	args=$(getopt -o "${short}" --long "${long}" --name "${PROJECT}" -- "${@}")
+	if [ $? -ne 0 ]
+	then
+		usage
+		exit 1
+	fi
+	eval set -- "${args}"
 
-    while true
-    do
-        case "${1}" in
-            -h|--help)
-                usage
-                exit 0
-                ;;
-            -c|--control)
-                shift
-                CONTROL="${1}"
-                ;;
-            -d|--decrement)
-                DECREMENT=true
-                ;;
-            -i|--increment)
-                INCREMENT=true
-                ;;
-            -l|--list)
-                LIST=true
-                ;;
-            -s|--set)
-                shift
-                SET="${1}"
-                ;;
-            -D|--delta)
-                shift
-                DELTA="${1}"
-                ;;
-            -m|--mute)
-                MUTE=true
-                ;;
-            -M|--status)
-                STATUS=true
-                ;;
-            -S|--short)
-                SHORT=true
-                ;;
-            *)
-                break
-                ;;
-        esac
-        shift
-    done
+	while true
+	do
+		case "${1}" in
+			-h|--help)
+				usage
+				exit 0
+				;;
+			-d|--decrement)
+				DECREMENT=true
+				;;
+			-D|--delta)
+				shift
+				DELTA="${1%%\%}"
 
-    # Run checks
-    if ! volume_is_control "${CONTROL}"
-    then
-        echo "${PROJECT}: Invalid control '${CONTROL}'." 1>&2
-        return ${EXIT_VOLUME_INVALID_CONTROL}
-    fi
+				if ! volume_verify_value "${DELTA}"
+				then
+					echo "${PROJECT}: Unable to change volume : Delta is not an integer." 1>&2
+					return ${EXIT_VOLUME_INVALID_DELTA}
+				fi
+				;;
+			-i|--increment)
+				INCREMENT=true
+				;;
+			-l|--list)
+				LIST=true
+				;;
+			-m|--mute)
+				MUTE=true
+				;;
+			-N|--notify)
+				NOTIFY=true
+				;;
+			-s|--set)
+				shift
+				SET="${1%%\%}"
 
-    # Run options
-    if [ -n "${DECREMENT}" ]
-    then
-        volume_decrement "${CONTROL}" "${DELTA}"
-    elif [ -n "${INCREMENT}" ]
-    then
-        volume_increment "${CONTROL}" "${DELTA}"
-    elif [ -n "${LIST}" ]
-    then
-        volume_list_controls
-    elif [ -n "${SET}" ]
-    then
-        volume_set "${CONTROL}" "${SET}"
-    elif [ -n "${MUTE}" ]
-    then
-        volume_mute_toggle "${CONTROL}"
-    elif [ -n "${STATUS}" ]
-    then
-        volume_mute_status "${CONTROL}"
-    else
-        volume_print "${CONTROL}"
-    fi
+				if ! volume_verify_value "${SET}"
+				then
+					echo "${PROJECT}: Unable to set volume : Value is not an integer." 1>&2
+					return ${EXIT_VOLUME_INVALID_VALUE}
+				fi
 
-    return $?
+				if [ ${SET} -lt 0 -o ${SET} -gt 100 ]
+				then
+					echo "${PROJECT}: Unable to set volume : Value must be between 0-100." 1>&2
+					return ${EXIT_VOLUME_INVALID_VALUE}
+				fi
+				;;
+			-S|--short)
+				SHORT=true
+				;;
+			-M|--status)
+				STATUS=true
+				;;
+			*)
+				break
+				;;
+		esac
+		shift
+	done
+
+	# Run checks
+	#if ! volume_is_control "${CONTROL}"
+	#then
+	#	 echo "${PROJECT}: Invalid control '${CONTROL}'." 1>&2
+	#	 return ${EXIT_VOLUME_INVALID_CONTROL}
+	#fi
+
+	# Run options
+	if [ -n "${DECREMENT}" ]
+	then
+		volume_decrement "${CONTROL}" "${DELTA}"
+	elif [ -n "${INCREMENT}" ]
+	then
+		volume_increment "${CONTROL}" "${DELTA}"
+	elif [ -n "${LIST}" ]
+	then
+		volume_list
+	elif [ -n "${SET}" ]
+	then
+		volume_set "${CONTROL}" "${SET}"
+	elif [ -n "${MUTE}" ]
+	then
+		volume_mute_toggle "${CONTROL}"
+	elif [ -n "${STATUS}" ]
+	then
+		volume_mute_status "${CONTROL}"
+	else
+		volume_print "${CONTROL}"
+	fi
+
+	return $?
 }
 
 ##
@@ -141,93 +158,45 @@ main()
 ##
 usage()
 {
-    echo "Usage: ${PROJECT} [options]"
-    echo 
-    echo "Options:"
-    echo "    -h, --help"
-    echo "        Print program usage."
-    echo 
-    echo "    -c, --control=<control>"
-    echo "        A volume control to act on. [Default: Master]."
-    echo 
-    echo "    -d, --decrement"
-    echo "        Decrement the volume level by the amount set by '-D'."
-    echo 
-    echo "    -i, --increment"
-    echo "        Increment the volume level by the amount set by '-D'."
-    echo 
-    echo "    -l, --list"
-    echo "        List all the volume controls."
-    echo 
-    echo "    -s, --set=<value>"
-    echo "        Set the volume to the desired level. [Range: 0 - 100]."
-    echo 
-    echo "    -D, --delta=<value>"
-    echo "        Set the amount to increment/decrement the volume. [Default: 5]."
-    echo 
-    echo "    -m, --mute"
-    echo "        Toggle mute."
-    echo 
-    echo "    -M, --status"
-    echo "        Print the mute status."
-    echo 
-    echo "    -S, --short"
-    echo "        Print the short form of the volume level."
-    echo 
-    echo "Arguments:"
-    echo "    <control>"
-    echo "        A mixer control."
-    echo 
-    echo "    <value>"
-    echo "        An integer value."
-}
-
-##
-# Print the current volume level.
-##
-volume_print()
-{
-    local control="${1}"
-    local value="${2}"
-    local volume=0
-    local status=$(volume_get_mute_status "${control}")
-	local msg=
-
-	if [ -n "${value}" ]
-    then
-        volume="${value}%"
-    else
-        volume="$(volume_get_volume "${control}")%"
-    fi
-
-	if [ -z "${SHORT}" ]
-	then
-		msg="Volume: ${volume}"
-	else
-		msg="${volume}"
-	fi
-
-    if [ "${status}" != "off" ]
-    then
-        msg+=" (Muted)"
-    fi
-
-	echo "${msg}"
-}
-
-##
-# Set the volume level.
-##
-volume_set()
-{
-    local control="${1}"
-    local value="${2/\%/}"
-    local status=0
-    volume_set_verify_value "${value}" || return $?
-    amixer -q sset "${control}" "${value}%"
-    status=$?
-    volume_print "${control}" "${value}"
-    return ${status}
+	echo "Usage: ${PROJECT} [options]"
+	echo 
+	echo "Options:"
+	echo "	  -h, --help"
+	echo "		  Print program usage."
+	echo 
+	#echo "    -c, --control=<control>"
+	#echo "		   A volume control to act on. [Default: Master]."
+	#echo 
+	echo "	  -d, --decrement"
+	echo "		  Decrement the volume level by the amount set by '-D'."
+	echo 
+	echo "	  -D, --delta=<value>"
+	echo "		  Set the amount to increment/decrement the volume. [Default: 5]."
+	echo 
+	echo "	  -i, --increment"
+	echo "		  Increment the volume level by the amount set by '-D'."
+	echo 
+	echo "	  -l, --list"
+	echo "		  List all the volume controls."
+	echo 
+	echo "	  -m, --mute"
+	echo "		  Toggle mute."
+	echo 
+	echo "	  -s, --set=<value>"
+	echo "		  Set the volume to the desired level. [Range: 0 - 100]."
+	echo 
+	echo "	  -S, --short"
+	echo "		  Print the short form of the volume level."
+	echo 
+	echo "	  -M, --status"
+	echo "		  Print the mute status."
+	echo 
+	echo "Arguments:"
+	#echo "    <control>"
+	#echo "		   A mixer control."
+	#echo 
+	echo "	  <value>"
+	echo "		  An integer value."
 }
 
 ##
@@ -235,153 +204,42 @@ volume_set()
 ##
 volume_decrement()
 {
-    local control="${1}"
-    local delta="${2}"
-    volume_delta "decrement" "${control}" "${delta}"
-    return $?
+	local control="${1}"
+	local delta="${2}"
+	local id=$(volume_get_default_sink_id)
+	pactl set-sink-volume "${id}" "-${delta}%"
+	volume_print "${control}"
+	return $?
 }
 
 ##
-# Increment the volume level.
+# Return the default sink ID.
 ##
-volume_increment()
+volume_get_default_sink_id()
 {
-    local control="${1}"
-    local delta="${2}"
-    volume_delta "increment" "${control}" "${delta}"
-    return $?
+	local name=$(volume_get_default_sink_name)
+	pactl list sinks short \
+		| grep "${name}" \
+		| awk '{ print $1 }'
 }
 
 ##
-# Change the volume level by some delta amount.
+# Return the default sink name.
 ##
-volume_delta()
+volume_get_default_sink_name()
 {
-    local type="${1}"
-    local control="${2}"
-    local delta="${3}"
-    local volume=$(volume_get_volume_normalized "${control}" "${delta}")
-    volume_increment_verify_delta "${delta}" || return $?
-    case "${type}" in
-        increment) volume=$[ ${volume} + ${delta} ] ;;
-        decrement) volume=$[ ${volume} - ${delta} ] ;;
-        *) return 1 ;;
-    esac
-    volume_set "${control}" "${volume}"
-    return $?
-}
+	local name=$(pactl info \
+		| grep "Default Sink" \
+		| awk '{ print $3 }')
+	local running=$(pactl list sinks short \
+		| awk '/RUNNING/ { print $2 }')
 
-##
-# List all the available volume controls.
-##
-volume_list_controls()
-{
-    amixer | grep -o "^Simple mixer control '.*'" \
-        | sed "s/^Simple mixer control '//; s/'//"
-    return $?
-}
-
-##
-# Toggle mute.
-##
-volume_mute_toggle()
-{
-    local control="${1}"
-    amixer -q set "${control}" toggle 
-    volume_print "${control}"
-}
-
-##
-# Volume mute status.
-##
-volume_mute_status()
-{
-    local control="${1}"
-    local status=$(volume_get_mute_status "${control}")
-    echo "Mute: ${status}"
-}
-
-##
-# Return the current volume level.
-##
-volume_get_volume()
-{
-    local IFS=$'\n'
-    local control="${1}"
-    local channels=($(volume_channel_get_list "${control}"))
-    local volume=0
-    local n=${#channels[@]}
-    local c=
-    for c in "${channels[@]}"
-    do
-        volume=$[ ${volume} + $(volume_channel_get_volume "${control}" "${c}") ]
-    done
-    if [ ${n} -eq 0 ]
-    then
-        echo 0
-        return 1
-    else
-        echo $[ ${volume} / ${n} ]
-        return 0
-    fi
-}
-
-##
-# Return the current normalized volume level, based on the delta volume.
-##
-volume_get_volume_normalized()
-{
-    local control="${1}"
-    local delta="${2}"
-    local volume=$(volume_get_volume "${control}")
-    volume_increment_verify_delta "${delta}" || return $?
-    echo $[ ${volume} - (${volume} % ${delta}) ]
-    return 0
-}
-
-##
-# Return playback channel.
-##
-volume_channel_get_list()
-{
-    local control="${1}"
-    amixer get "${control}" | grep 'Playback channels' \
-        | sed -e 's/^.*.: //' -e 's/ - /\n/'
-    return $?
-}
-
-##
-# Return channel information.
-##
-volume_channel_get_info()
-{
-    local control="${1}"
-    local channel="${2}"
-    amixer get "${control}" | grep "${channel}:"
-    return $?
-}
-
-##
-# Return channel volume.
-##
-volume_channel_get_volume()
-{
-    local control="${1}"
-    local channel="${2}"
-    volume_channel_get_info  "${control}" "${channel}" \
-        | sed 's/.*\[\(.*\)%\].*/\1/'
-    return $?
-}
-
-##
-# Return playback channel status.
-##
-volume_channel_get_mute_status()
-{
-    local control="${1}"
-    local channel="${2}"
-    volume_channel_get_info "${control}" "${channel}" \
-        | sed 's/.*\[\(.*\)\]/\1/'
+	if [ -z "${running}" ]
+	then
+		echo "${name}"
+	else
+		echo "${running}"
+	fi
 }
 
 ##
@@ -389,80 +247,200 @@ volume_channel_get_mute_status()
 ##
 volume_get_mute_status()
 {
-    local IFS=$'\n'
-    local control="${1}"
-    local channels=($(volume_channel_get_list "${control}"))
-    local status="off"
-    local c=
-    for c in "${channels[@]}"
-    do
-        status=$(volume_channel_get_mute_status "${control}" "${c}")
-        if [ "${status}" == "on" ]
-        then
-            status="off"
-        else
-            status="on"
-            break
-        fi
-    done
-    echo "${status}"
-    return 0
+	#local IFS=$'\n'
+	local control="${1}"
+	local id=$(volume_get_default_sink_id)
+	local status=$(pactl list sinks \
+		| grep '^[[:space:]]Mute:' \
+		| head -n $(( ${id} + 1 )) \
+		| tail -n 1 \
+		| awk '{ print $2 }')
+
+	if [ "${status}" == "no" ]
+	then
+		echo "off"
+	else
+		echo "on"
+	fi
+	return 0
 }
 
 ##
-# Verify input value when setting volume.
+# Return the notification icon for the given volume level.
 ##
-volume_set_verify_value()
+volume_get_notification_icon()
 {
-    local value="${1}"
-    if [ "${value}" -eq "${value}" ] 2> /dev/null
-    then
-        :
-    else
-        echo "${PROJECT}: Unable to set volume: Input value is not an integer." 1>&2
-        return ${EXIT_VOLUME_INVALID_VALUE}
-    fi
-    if [ ${value} -lt 0 -o ${value} -gt 100 ]
-    then
-        echo "${PROJECT}: Unable to set volume: Value must be between 0-100." 1>&2
-        return ${EXIT_VOLUME_INVALID_VALUE}
-    fi
-    return 0
+	local value="${1}"
+	local status=$(volume_get_mute_status)
+	#local status=$(volume_get_mute_status "${control}")
+	local icon=
+
+	if [ "${status}" == "on" ]
+	then
+		icon="audio-volume-muted"
+	elif [ ${value} -eq 0 ]
+	then
+		icon="audio-volume-muted"
+	elif [ ${value} -gt 0 -a ${value} -lt 30 ]
+	then
+		icon="audio-volume-low"
+	elif [ ${value} -ge 30 -a ${value} -lt 60 ]
+	then
+		icon="audio-volume-medium"
+	elif [ ${value} -ge 60 ]
+	then
+		icon="audio-volume-high"
+	else
+		:
+	fi
+
+	echo "${icon}"
 }
 
 ##
-# Verify input delta when incrementing the volume.
+# Return the print message.
 ##
-volume_increment_verify_delta()
+volume_get_print_message()
 {
-    local delta="${1}"
-    if [ "${delta}" -eq "${delta}" ] 2> /dev/null
-    then
-        :
-    else
-        echo "${PROJECT}: Unable to increment volume: Input delta is not an integer." 1>&2
-        return ${EXIT_VOLUME_INVALID_DELTA}
-    fi
-    return 0
+	local volume="${1}"
+	local message="Volume: ${volume}"
+	local status=$(volume_get_mute_status)
+	#local status=$(volume_get_mute_status "${control}")
+
+	if [ -n "${SHORT}" ]
+	then
+		message="${volume}"
+	fi
+
+	if [ "${status}" != "off" ]
+	then
+		message+=" (Muted)"
+	fi
+
+	echo "${message}"
+}
+
+##
+# Return the volume level.
+##
+volume_get_volume()
+{
+	local id=$(volume_get_default_sink_id)
+	pactl list sinks \
+		| grep '^[[:space:]]Volume:' \
+		| head -n $(( ${id} + 1 )) \
+		| tail -n 1 \
+		| sed -e 's,.* \([0-9][0-9]*\)%.*,\1,'
+}
+
+##
+# Increment the volume level.
+##
+volume_increment()
+{
+	local control="${1}"
+	local delta="${2}"
+	local id=$(volume_get_default_sink_id)
+
+	pactl set-sink-volume "${id}" "+${delta}%"
+	volume_print "${control}"
+	return $?
+}
+
+##
+# List all the available volume sinks.
+##
+volume_list()
+{
+	pactl list sinks \
+		| awk '/Sink #|State:|Name:|Description:/'
+}
+
+##
+# Volume mute status.
+##
+volume_mute_status()
+{
+	local control="${1}"
+	local status=$(volume_get_mute_status "${control}")
+	echo "Mute: ${status}"
+}
+
+##
+# Toggle mute.
+##
+volume_mute_toggle()
+{
+	local control="${1}"
+	local id=$(volume_get_default_sink_id)
+
+	pactl set-sink-mute "${id}" "toggle"
+	volume_print "${control}"
+}
+
+##
+# Print the current volume level.
+##
+volume_print()
+{
+	local control="${1}"
+	local value=$(volume_get_volume "${control}")
+	local volume="${value}%"
+	local message=$(volume_get_print_message "${volume}")
+
+	echo "${message}"
+
+	if [ -n "${NOTIFY}" ]
+	then
+		local icon=$(volume_get_notification_icon "${value}")
+		notify-send -t 2000 "Volume" "${volume}" --icon="${icon}" &
+	fi
+}
+
+##
+# Set the volume level.
+##
+volume_set()
+{
+	local control="${1}"
+	local value="${2}"
+	local id=$(volume_get_default_sink_id)
+
+	pactl set-sink-volume "${id}" "${value}%"
+	volume_print "${control}"
+	return ${status}
+}
+
+##
+# Verify input value.
+##
+volume_verify_value()
+{
+	if [ "${1}" -eq "${1}" ] 2> /dev/null
+	then
+		return 0
+	else
+		return 1
+	fi
 }
 
 ##
 # Check if input is a valid control.
 ##
-volume_is_control()
-{
-    local control="${1}"
-    # local valid=("Master" "Headphone" "Speaker")
-    local valid=($(volume_list_controls))
-    for v in "${valid[@]}"
-    do
-        if [ "${control}" == "${v}" ]
-        then
-            return 0
-        fi
-    done
-    return 1
-}
+#volume_is_control()
+#{
+#	local control="${1}"
+#	# local valid=("Master" "Headphone" "Speaker")
+#	local valid=($(volume_list_controls))
+#	for v in "${valid[@]}"
+#	do
+#		if [ "${control}" == "${v}" ]
+#		then
+#			return 0
+#		fi
+#	done
+#	return 1
+#}
 
 ##
 # Run script.
